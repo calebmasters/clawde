@@ -7,8 +7,8 @@ Thanks for your interest in contributing! Clod is a desktop overlay for Claude C
 1. Make sure you have the [prerequisites](README.md#prerequisites) installed (macOS, Xcode CLT, Node.js 18+, Claude Code CLI 2.1+)
 2. Fork and clone the repo:
    ```bash
-   git clone https://github.com/<your-username>/clui-cc.git
-   cd clui-cc
+   git clone https://github.com/<your-username>/clod.git
+   cd clod
    ```
 3. Check your environment (optional but recommended):
    ```bash

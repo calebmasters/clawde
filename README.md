@@ -42,12 +42,12 @@ The fastest way to get Clod running as a regular Mac app. This installs dependen
 **1) Clone the repo**
 
 ```bash
-git clone https://github.com/lcoutodemos/clui-cc.git
+git clone https://github.com/misha-park/clod.git
 ```
 
 **2) Double-click `install-app.command`**
 
-Open the `clui-cc` folder in Finder and double-click `install-app.command`.
+Open the `clod` folder in Finder and double-click `install-app.command`.
 
 > **First launch:** macOS may block the app because it's unsigned. Go to **System Settings → Privacy & Security → Open Anyway**. You only need to do this once.
 > **Folder cleanup:** the installer removes temporary `dist/` and `release/` folders after a successful install to keep the repo tidy.
@@ -64,11 +64,11 @@ Only `install-app.command` is kept at root intentionally for non-technical users
 ### Quick Start (Terminal)
 
 ```bash
-git clone https://github.com/lcoutodemos/clui-cc.git
+git clone https://github.com/misha-park/clod.git
 ```
 
 ```bash
-cd clui-cc
+cd clod
 ```
 
 ```bash
