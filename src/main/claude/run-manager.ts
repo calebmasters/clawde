@@ -4,29 +4,30 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { StreamParser } from '../stream-parser'
 import { normalize } from './event-normalizer'
+import { buildUserContent } from './message-content'
 import { log as _log } from '../logger'
 import { getCliEnv } from '../cli-env'
 import type { ClaudeEvent, NormalizedEvent, RunOptions, EnrichedError } from '../../shared/types'
 
 const MAX_RING_LINES = 100
-const DEBUG = process.env.CLUI_DEBUG === '1'
+const DEBUG = process.env.CLOD_DEBUG === '1'
 
-// Appended to Claude's default system prompt so it knows it's running inside CLUI.
+// Appended to Claude's default system prompt so it knows it's running inside CLOD.
 // Uses --append-system-prompt (additive) not --system-prompt (replacement).
-const CLUI_SYSTEM_HINT = [
-  'IMPORTANT: You are NOT running in a terminal. You are running inside CLUI,',
+const CLOD_SYSTEM_HINT = [
+  'IMPORTANT: You are NOT running in a terminal. You are running inside CLOD,',
   'a desktop chat application with a rich UI that renders full markdown.',
-  'CLUI is a GUI wrapper around Claude Code — the user sees your output in a',
+  'CLOD is a GUI wrapper around Claude Code — the user sees your output in a',
   'styled conversation view, not a raw terminal.',
   '',
-  'Because CLUI renders markdown natively, you MUST use rich formatting when it helps:',
+  'Because CLOD renders markdown natively, you MUST use rich formatting when it helps:',
   '- Always use clickable markdown links: [label](https://url) — they render as real buttons.',
-  '- When the user asks for images, and public web images are appropriate, proactively find and render them in CLUI.',
+  '- When the user asks for images, and public web images are appropriate, proactively find and render them in CLOD.',
   '- Workflow: WebSearch for relevant public pages -> WebFetch those pages -> extract real image URLs -> render with markdown ![alt](url).',
   '- Do not guess, fabricate, or construct image URLs from memory.',
   '- Only embed images when the URL is a real publicly accessible image URL found through tools or explicitly provided by the user.',
   '- If real image URLs cannot be obtained confidently, fall back to clickable links and briefly say so.',
-  '- Do not ask whether CLUI can render images; assume it can.',
+  '- Do not ask whether CLOD can render images; assume it can.',
   '- Use tables, bold, headers, and bullet lists freely — they all render beautifully.',
   '- Use code blocks with language tags for syntax highlighting.',
   '',
@@ -38,7 +39,7 @@ const CLUI_SYSTEM_HINT = [
 // Tools auto-approved via --allowedTools (never trigger the permission card).
 // Includes routine internal agent mechanics (Agent, Task, TaskOutput, TodoWrite,
 // Notebook) — prompting for these would make UX terrible without adding meaningful
-// safety. This is a deliberate CLUI policy choice, not native Claude parity.
+// safety. This is a deliberate CLOD policy choice, not native Claude parity.
 // If runtime evidence shows any of these create real user-facing approval moments,
 // they should be moved to the hook matcher in permission-server.ts instead.
 const SAFE_TOOLS = [
@@ -144,8 +145,12 @@ export class RunManager extends EventEmitter {
       '--output-format', 'stream-json',
       '--verbose',
       '--include-partial-messages',
-      '--permission-mode', 'default',
     ]
+
+    // Auto mode: bypass all approvals at the CLI level — this non-interactive
+    // transport can't show a prompt, so 'default' would deny tools like Write.
+    // Ask mode: 'default' + the PreToolUse hook handles per-tool approvals.
+    args.push('--permission-mode', options.permissionMode === 'auto' ? 'bypassPermissions' : 'default')
 
     if (options.sessionId) {
       args.push('--resume', options.sessionId)
@@ -160,7 +165,7 @@ export class RunManager extends EventEmitter {
     }
 
     if (options.hookSettingsPath) {
-      // CLUI-scoped hook settings: the PreToolUse HTTP hook handles permissions
+      // CLOD-scoped hook settings: the PreToolUse HTTP hook handles permissions
       // for dangerous tools (Bash, Edit, Write, MultiEdit).
       // Auto-approve safe tools so they don't trigger the permission card.
       args.push('--settings', options.hookSettingsPath)
@@ -187,8 +192,8 @@ export class RunManager extends EventEmitter {
     if (options.systemPrompt) {
       args.push('--system-prompt', options.systemPrompt)
     }
-    // Always tell Claude it's inside CLUI (additive, doesn't replace base prompt)
-    args.push('--append-system-prompt', CLUI_SYSTEM_HINT)
+    // Always tell Claude it's inside CLOD (additive, doesn't replace base prompt)
+    args.push('--append-system-prompt', CLOD_SYSTEM_HINT)
 
     if (DEBUG) {
       log(`Starting run ${requestId}: ${this.claudeBinary} ${args.join(' ')}`)
@@ -308,7 +313,7 @@ export class RunManager extends EventEmitter {
       type: 'user',
       message: {
         role: 'user',
-        content: [{ type: 'text', text: options.prompt }],
+        content: buildUserContent(options.prompt, options.images),
       },
     })
     child.stdin!.write(userMessage + '\n')

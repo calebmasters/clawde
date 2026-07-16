@@ -28,11 +28,14 @@ Desktop.ini
 
 # Logs
 *.log
-~/.clui-debug.log
+~/.clod-debug.log
 
 # Runtime
-.clui.pid
+.clod.pid
 
 # Temporary files
 *.tmp
 *.bak
+
+# electron-vite transpiled config temp files
+electron.vite.config.*.mjs

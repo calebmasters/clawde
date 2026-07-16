@@ -1,13 +1,13 @@
 import { create } from 'zustand'
-import type { TabStatus, NormalizedEvent, EnrichedError, Message, TabState, Attachment, CatalogPlugin, PluginStatus } from '../../shared/types'
+import type { TabStatus, NormalizedEvent, EnrichedError, Message, TabState, Attachment, InlineImage, CatalogPlugin, PluginStatus } from '../../shared/types'
 import { useThemeStore } from '../theme'
 import notificationSrc from '../../../resources/notification.mp3'
 
 // ─── Known models ───
 
 export const AVAILABLE_MODELS = [
-  { id: 'claude-opus-4-6', label: 'Opus 4.6' },
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
+  { id: 'claude-opus-4-8', label: 'Opus 4.8' },
+  { id: 'claude-sonnet-5', label: 'Sonnet 5' },
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
 ] as const
 
@@ -39,6 +39,44 @@ export function getModelDisplayLabel(modelId: string): string {
   return has1MContext ? `${normalizedId} (1M)` : normalizedId
 }
 
+// ─── Persisted preferences (model, permission mode, default folder) ───
+
+const PREFS_KEY = 'clod-session-prefs'
+
+interface SessionPrefs {
+  preferredModel: string | null
+  permissionMode: 'ask' | 'auto'
+  defaultDirOverride: string | null
+}
+
+const DEFAULT_PREFS: SessionPrefs = {
+  preferredModel: 'claude-sonnet-5',
+  permissionMode: 'ask',
+  defaultDirOverride: null,
+}
+
+function loadPrefs(): SessionPrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY)
+    if (raw) {
+      const p = JSON.parse(raw)
+      return {
+        preferredModel: typeof p.preferredModel === 'string' || p.preferredModel === null
+          ? p.preferredModel : DEFAULT_PREFS.preferredModel,
+        permissionMode: p.permissionMode === 'auto' ? 'auto' : 'ask',
+        defaultDirOverride: typeof p.defaultDirOverride === 'string' ? p.defaultDirOverride : null,
+      }
+    }
+  } catch {}
+  return { ...DEFAULT_PREFS }
+}
+
+function savePrefs(p: SessionPrefs): void {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)) } catch {}
+}
+
+const initialPrefs = loadPrefs()
+
 // ─── Store ───
 
 interface StaticInfo {
@@ -47,6 +85,8 @@ interface StaticInfo {
   subscriptionType: string | null
   projectPath: string
   homePath: string
+  /** Default working directory for new chats (scratch folder) */
+  defaultDir: string
 }
 
 interface State {
@@ -56,10 +96,12 @@ interface State {
   isExpanded: boolean
   /** Global info fetched on startup (not per-session) */
   staticInfo: StaticInfo | null
-  /** User's preferred model override (null = use default) */
+  /** User's preferred model override (null = use default). Persisted. */
   preferredModel: string | null
-  /** Global permission mode: 'ask' shows cards, 'auto' auto-approves all tool calls */
+  /** Global permission mode: 'ask' shows cards, 'auto' auto-approves all tool calls. Persisted. */
   permissionMode: 'ask' | 'auto'
+  /** User-chosen default working directory for new chats (null = use main's scratch dir). Persisted. */
+  defaultDirOverride: string | null
 
   // Marketplace state
   marketplaceOpen: boolean
@@ -75,6 +117,7 @@ interface State {
   initStaticInfo: () => Promise<void>
   setPreferredModel: (model: string | null) => void
   setPermissionMode: (mode: 'ask' | 'auto') => void
+  setDefaultDirOverride: (dir: string | null) => void
   createTab: () => Promise<string>
   selectTab: (tabId: string) => void
   closeTab: (tabId: string) => void
@@ -113,7 +156,7 @@ notificationAudio.volume = 1.0
 async function playNotificationIfHidden(): Promise<void> {
   if (!useThemeStore.getState().soundEnabled) return
   try {
-    const visible = await window.clui.isVisible()
+    const visible = await window.clod.isVisible()
     if (!visible) {
       notificationAudio.currentTime = 0
       notificationAudio.play().catch(() => {})
@@ -154,8 +197,9 @@ export const useSessionStore = create<State>((set, get) => ({
   activeTabId: initialTab.id,
   isExpanded: false,
   staticInfo: null,
-  preferredModel: null,
-  permissionMode: 'ask',
+  preferredModel: initialPrefs.preferredModel,
+  permissionMode: initialPrefs.permissionMode,
+  defaultDirOverride: initialPrefs.defaultDirOverride,
 
   // Marketplace
   marketplaceOpen: false,
@@ -168,8 +212,10 @@ export const useSessionStore = create<State>((set, get) => ({
   marketplaceFilter: 'All',
 
   initStaticInfo: async () => {
+    // Push the persisted permission mode to main (main defaults to 'ask').
+    try { window.clod.setPermissionMode(get().permissionMode) } catch {}
     try {
-      const result = await window.clui.start()
+      const result = await window.clod.start()
       set({
         staticInfo: {
           version: result.version || 'unknown',
@@ -177,6 +223,7 @@ export const useSessionStore = create<State>((set, get) => ({
           subscriptionType: result.auth?.subscriptionType || null,
           projectPath: result.projectPath || '~',
           homePath: result.homePath || '~',
+          defaultDir: result.defaultDir || result.homePath || '~',
         },
       })
     } catch {}
@@ -184,17 +231,27 @@ export const useSessionStore = create<State>((set, get) => ({
 
   setPreferredModel: (model) => {
     set({ preferredModel: model })
+    const s = get()
+    savePrefs({ preferredModel: model, permissionMode: s.permissionMode, defaultDirOverride: s.defaultDirOverride })
   },
 
   setPermissionMode: (mode) => {
     set({ permissionMode: mode })
-    window.clui.setPermissionMode(mode)
+    window.clod.setPermissionMode(mode)
+    const s = get()
+    savePrefs({ preferredModel: s.preferredModel, permissionMode: mode, defaultDirOverride: s.defaultDirOverride })
+  },
+
+  setDefaultDirOverride: (dir) => {
+    set({ defaultDirOverride: dir })
+    const s = get()
+    savePrefs({ preferredModel: s.preferredModel, permissionMode: s.permissionMode, defaultDirOverride: dir })
   },
 
   createTab: async () => {
-    const homeDir = get().staticInfo?.homePath || '~'
+    const homeDir = get().defaultDirOverride || get().staticInfo?.defaultDir || get().staticInfo?.homePath || '~'
     try {
-      const { tabId } = await window.clui.createTab()
+      const { tabId } = await window.clod.createTab()
       const tab: TabState = {
         ...makeLocalTab(),
         id: tabId,
@@ -272,8 +329,8 @@ export const useSessionStore = create<State>((set, get) => ({
     set({ marketplaceLoading: true, marketplaceError: null })
     try {
       const [catalog, installed] = await Promise.all([
-        window.clui.fetchMarketplace(forceRefresh),
-        window.clui.listInstalledPlugins(),
+        window.clod.fetchMarketplace(forceRefresh),
+        window.clod.listInstalledPlugins(),
       ])
       if (catalog.error && catalog.plugins.length === 0) {
         set({ marketplaceError: catalog.error, marketplaceLoading: false })
@@ -316,7 +373,7 @@ export const useSessionStore = create<State>((set, get) => ({
     set((s) => ({
       marketplacePluginStates: { ...s.marketplacePluginStates, [plugin.id]: 'installing' },
     }))
-    const result = await window.clui.installPlugin(plugin.repo, plugin.installName, plugin.marketplace, plugin.sourcePath, plugin.isSkillMd)
+    const result = await window.clod.installPlugin(plugin.repo, plugin.installName, plugin.marketplace, plugin.sourcePath, plugin.isSkillMd)
     if (result.ok) {
       set((s) => ({
         marketplacePluginStates: { ...s.marketplacePluginStates, [plugin.id]: 'installed' as PluginStatus },
@@ -330,7 +387,7 @@ export const useSessionStore = create<State>((set, get) => ({
   },
 
   uninstallMarketplacePlugin: async (plugin) => {
-    const result = await window.clui.uninstallPlugin(plugin.installName)
+    const result = await window.clod.uninstallPlugin(plugin.installName)
     if (result.ok) {
       set((s) => ({
         marketplacePluginStates: { ...s.marketplacePluginStates, [plugin.id]: 'not_installed' as PluginStatus },
@@ -348,7 +405,7 @@ export const useSessionStore = create<State>((set, get) => ({
   },
 
   closeTab: (tabId) => {
-    window.clui.closeTab(tabId).catch(() => {})
+    window.clod.closeTab(tabId).catch(() => {})
 
     const s = get()
     const remaining = s.tabs.filter((t) => t.id !== tabId)
@@ -381,10 +438,10 @@ export const useSessionStore = create<State>((set, get) => ({
   resumeSession: async (sessionId, title, projectPath) => {
     const defaultDir = projectPath || get().staticInfo?.homePath || '~'
     try {
-      const { tabId } = await window.clui.createTab()
+      const { tabId } = await window.clod.createTab()
 
       // Load previous conversation messages from the JSONL file
-      const history = await window.clui.loadSession(sessionId, defaultDir).catch(() => [])
+      const history = await window.clod.loadSession(sessionId, defaultDir).catch(() => [])
       const messages: Message[] = history.map((m) => ({
         id: nextMsgId(),
         role: m.role as Message['role'],
@@ -446,7 +503,7 @@ export const useSessionStore = create<State>((set, get) => ({
 
   respondPermission: (tabId, questionId, optionId) => {
     // Send to backend
-    window.clui.respondPermission(tabId, questionId, optionId).catch(() => {})
+    window.clod.respondPermission(tabId, questionId, optionId).catch(() => {})
 
     // Remove answered item from queue; show next tool's activity or clear
     set((s) => ({
@@ -495,7 +552,7 @@ export const useSessionStore = create<State>((set, get) => ({
 
   setBaseDirectory: (dir) => {
     const { activeTabId } = get()
-    window.clui.resetTabSession(activeTabId)
+    window.clod.resetTabSession(activeTabId)
     set((s) => ({
       tabs: s.tabs.map((t) =>
         t.id === activeTabId
@@ -547,10 +604,10 @@ export const useSessionStore = create<State>((set, get) => ({
   // ─── Send ───
 
   sendMessage: (prompt, projectPath) => {
-    const { activeTabId, tabs, staticInfo } = get()
+    const { activeTabId, tabs, staticInfo, defaultDirOverride } = get()
     const tab = tabs.find((t) => t.id === activeTabId)
-    // Use explicitly chosen directory, otherwise fall back to user home
-    const resolvedPath = projectPath || (tab?.hasChosenDirectory ? tab.workingDirectory : (staticInfo?.homePath || tab?.workingDirectory || '~'))
+    // Use explicitly chosen directory, otherwise fall back to the default folder
+    const resolvedPath = projectPath || (tab?.hasChosenDirectory ? tab.workingDirectory : (defaultDirOverride || staticInfo?.defaultDir || staticInfo?.homePath || tab?.workingDirectory || '~'))
     if (!tab) return
 
     // Guard: don't send while connecting (warmup in progress)
@@ -559,13 +616,33 @@ export const useSessionStore = create<State>((set, get) => ({
     const isBusy = tab.status === 'running'
     const requestId = crypto.randomUUID()
 
-    // Build full prompt with attachment context
+    // Build attachment context. Images with preview data are embedded inline as
+    // image content blocks (the model sees them directly); other files — and
+    // images too large to have a preview — are referenced by path in the prompt
+    // text so the agent can Read them.
+    const parseDataUrl = (dataUrl: string): { mediaType: string; data: string } => {
+      const m = dataUrl.match(/^data:([^;]+);base64,(.*)$/)
+      return m ? { mediaType: m[1], data: m[2] } : { mediaType: '', data: '' }
+    }
+    const inlineImages: InlineImage[] = []
+    const fileNotes: string[] = []
+    for (const a of tab.attachments) {
+      if (a.type === 'image' && a.dataUrl) {
+        const { mediaType, data } = parseDataUrl(a.dataUrl)
+        inlineImages.push({
+          mediaType: mediaType || a.mimeType || 'image/png',
+          data,
+          path: a.path,
+          name: a.name,
+        })
+      } else {
+        fileNotes.push(`[Attached ${a.type}: ${a.path}]`)
+      }
+    }
+
     let fullPrompt = prompt
-    if (tab.attachments.length > 0) {
-      const attachmentCtx = tab.attachments
-        .map((a) => `[Attached ${a.type}: ${a.path}]`)
-        .join('\n')
-      fullPrompt = `${attachmentCtx}\n\n${prompt}`
+    if (fileNotes.length > 0) {
+      fullPrompt = `${fileNotes.join('\n')}\n\n${prompt}`
     }
 
     const title = tab.messages.length === 0
@@ -611,12 +688,13 @@ export const useSessionStore = create<State>((set, get) => ({
 
     // Send to backend — ControlPlane will queue if a run is active
     const { preferredModel } = get()
-    window.clui.prompt(activeTabId, requestId, {
+    window.clod.prompt(activeTabId, requestId, {
       prompt: fullPrompt,
       projectPath: resolvedPath,
       sessionId: tab.claudeSessionId || undefined,
       model: preferredModel || undefined,
       addDirs: tab.additionalDirs.length > 0 ? tab.additionalDirs : undefined,
+      images: inlineImages.length > 0 ? inlineImages : undefined,
     }).catch((err: Error) => {
       get().handleError(activeTabId, {
         message: err.message,

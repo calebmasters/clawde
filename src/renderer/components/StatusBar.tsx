@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Terminal, CaretDown, Check, FolderOpen, Plus, X, ShieldCheck } from '@phosphor-icons/react'
+import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { useSessionStore, AVAILABLE_MODELS, getModelDisplayLabel } from '../stores/sessionStore'
 import { usePopoverLayer } from './PopoverLayer'
 import { useColors } from '../theme'
@@ -11,7 +12,8 @@ import { useColors } from '../theme'
 function ModelPicker() {
   const preferredModel = useSessionStore((s) => s.preferredModel)
   const setPreferredModel = useSessionStore((s) => s.setPreferredModel)
-  const tab = useSessionStore(
+  const tab = useStoreWithEqualityFn(
+    useSessionStore,
     (s) => s.tabs.find((t) => t.id === s.activeTabId),
     (a, b) => a === b || (!!a && !!b && a.status === b.status && a.sessionModel === b.sessionModel),
   )
@@ -82,7 +84,7 @@ function ModelPicker() {
       {popoverLayer && open && createPortal(
         <motion.div
           ref={popoverRef}
-          data-clui-ui
+          data-clod-ui
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 4 }}
@@ -175,10 +177,12 @@ function PermissionModePicker() {
         onClick={handleToggle}
         className="flex items-center gap-0.5 text-[10px] rounded-full px-1.5 py-0.5 transition-colors"
         style={{
-          color: colors.textTertiary,
+          color: isAuto ? '#f59e0b' : colors.textTertiary,
+          background: isAuto ? 'rgba(245,158,11,0.14)' : 'transparent',
+          fontWeight: isAuto ? 600 : 400,
           cursor: 'pointer',
         }}
-        title="Permission mode (global)"
+        title={isAuto ? 'Auto-approve is ON — tools run without asking (click to change)' : 'Permission mode (global)'}
       >
         <ShieldCheck size={11} weight={isAuto ? 'fill' : 'regular'} />
         {isAuto ? 'Auto' : 'Ask'}
@@ -188,7 +192,7 @@ function PermissionModePicker() {
       {popoverLayer && open && createPortal(
         <motion.div
           ref={popoverRef}
-          data-clui-ui
+          data-clod-ui
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 4 }}
@@ -257,7 +261,8 @@ function compactPath(fullPath: string): string {
 }
 
 export function StatusBar() {
-  const tab = useSessionStore(
+  const tab = useStoreWithEqualityFn(
+    useSessionStore,
     (s) => s.tabs.find((t) => t.id === s.activeTabId),
     (a, b) => a === b || (!!a && !!b
       && a.status === b.status
@@ -297,7 +302,7 @@ export function StatusBar() {
   const hasExtraDirs = tab.additionalDirs.length > 0
 
   const handleOpenInTerminal = () => {
-    window.clui.openInTerminal(tab.claudeSessionId, tab.workingDirectory)
+    window.clod.openInTerminal(tab.claudeSessionId, tab.workingDirectory)
   }
 
   const handleDirClick = () => {
@@ -313,7 +318,7 @@ export function StatusBar() {
   }
 
   const handleAddDir = async () => {
-    const dir = await window.clui.selectDirectory()
+    const dir = await window.clod.selectDirectory()
     if (dir) {
       addDirectory(dir)
     }
@@ -354,7 +359,7 @@ export function StatusBar() {
         {popoverLayer && dirOpen && createPortal(
           <motion.div
             ref={dirPopRef}
-            data-clui-ui
+            data-clod-ui
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.12 }}

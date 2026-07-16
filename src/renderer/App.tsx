@@ -1,9 +1,9 @@
-import React, { useEffect, useCallback, useRef } from 'react'
+import React, { useEffect, useCallback, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Paperclip, Camera, HeadCircuit } from '@phosphor-icons/react'
 import { TabStrip } from './components/TabStrip'
 import { ConversationView } from './components/ConversationView'
 import { InputBar } from './components/InputBar'
+import { AnimatedInputBorder } from './components/AnimatedInputBorder'
 import { StatusBar } from './components/StatusBar'
 import { MarketplacePanel } from './components/MarketplacePanel'
 import { PopoverLayerProvider } from './components/PopoverLayer'
@@ -19,20 +19,61 @@ export default function App() {
   useHealthReconciliation()
 
   const activeTabStatus = useSessionStore((s) => s.tabs.find((t) => t.id === s.activeTabId)?.status)
-  const addAttachments = useSessionStore((s) => s.addAttachments)
   const colors = useColors()
   const setSystemTheme = useThemeStore((s) => s.setSystemTheme)
   const expandedUI = useThemeStore((s) => s.expandedUI)
+  const windowPosition = useThemeStore((s) => s.windowPosition)
+  const borderAnimation = useThemeStore((s) => s.borderAnimation)
+  const [inputFocused, setInputFocused] = useState(false)
+
+  // Push persisted window position + hotkey to main on launch (main defaults to
+  // center / double-tap Option).
+  useEffect(() => {
+    const t = useThemeStore.getState()
+    try { window.clod.setWindowPosition(t.windowPosition) } catch {}
+    try { window.clod.setHotkey(t.hotkeyMode, t.hotkeyAccelerator) } catch {}
+    try { window.clod.setOpenAtLogin(t.openAtLogin) } catch {}
+  }, [])
+
+  // Position the overlay window: horizontal anchor (center/right) + a small,
+  // even gap from the bottom edge. Driven from the renderer via the always-loaded
+  // window-drag API so it works without a full restart. Runs on mount and when
+  // the position preference changes.
+  useEffect(() => {
+    const move = () => {
+      const scr = window.screen as Screen & { availLeft?: number; availTop?: number }
+      const availLeft = scr.availLeft ?? 0
+      const availTop = scr.availTop ?? 0
+      const winW = window.outerWidth || 1040
+      const winH = window.outerHeight || 720
+      // Gap from the work-area bottom to the window bottom. The input sits ~10px
+      // above the window bottom, so the visible bottom gap ≈ this + 10 ≈ the 16px
+      // right-edge inset.
+      const WINDOW_BOTTOM_GAP = 6
+      const targetX = windowPosition === 'right'
+        ? availLeft + scr.availWidth - winW
+        : availLeft + Math.round((scr.availWidth - winW) / 2)
+      const targetY = availTop + scr.availHeight - winH - WINDOW_BOTTOM_GAP
+      const deltaX = Math.round(targetX - window.screenX)
+      const deltaY = Math.round(targetY - window.screenY)
+      if ((deltaX !== 0 || deltaY !== 0) && window.clod?.startWindowDrag) {
+        window.clod.startWindowDrag(deltaX, deltaY)
+      }
+    }
+    // Defer a tick so window.screenX/Y reflect the current native bounds.
+    const id = setTimeout(move, 0)
+    return () => clearTimeout(id)
+  }, [windowPosition])
 
   // ─── Theme initialization ───
   useEffect(() => {
     // Get initial OS theme — setSystemTheme respects themeMode (system/light/dark)
-    window.clui.getTheme().then(({ isDark }) => {
+    window.clod.getTheme().then(({ isDark }) => {
       setSystemTheme(isDark)
     }).catch(() => {})
 
     // Listen for OS theme changes
-    const unsub = window.clui.onThemeChange((isDark) => {
+    const unsub = window.clod.onThemeChange((isDark) => {
       setSystemTheme(isDark)
     })
     return unsub
@@ -40,14 +81,14 @@ export default function App() {
 
   useEffect(() => {
     useSessionStore.getState().initStaticInfo().then(() => {
-      const homeDir = useSessionStore.getState().staticInfo?.homePath || '~'
+      const homeDir = useSessionStore.getState().defaultDirOverride || useSessionStore.getState().staticInfo?.defaultDir || useSessionStore.getState().staticInfo?.homePath || '~'
       const tab = useSessionStore.getState().tabs[0]
       if (tab) {
         // Set working directory to home by default (user hasn't chosen yet)
         useSessionStore.setState((s) => ({
           tabs: s.tabs.map((t, i) => (i === 0 ? { ...t, workingDirectory: homeDir, hasChosenDirectory: false } : t)),
         }))
-        window.clui.createTab().then(({ tabId }) => {
+        window.clod.createTab().then(({ tabId }) => {
           useSessionStore.setState((s) => ({
             tabs: s.tabs.map((t, i) => (i === 0 ? { ...t, id: tabId } : t)),
             activeTabId: tabId,
@@ -70,21 +111,21 @@ export default function App() {
 
   // OS-level click-through (RAF-throttled to avoid per-pixel IPC)
   useEffect(() => {
-    if (!window.clui?.setIgnoreMouseEvents) return
+    if (!window.clod?.setIgnoreMouseEvents) return
     let lastIgnored: boolean | null = null
 
     const onMouseMove = (e: MouseEvent) => {
       // While dragging, keep full mouse capture — don't toggle ignore-events
       if (dragRef.current) return
       const el = document.elementFromPoint(e.clientX, e.clientY)
-      const isUI = !!(el && el.closest('[data-clui-ui]'))
+      const isUI = !!(el && el.closest('[data-clod-ui]'))
       const shouldIgnore = !isUI
       if (shouldIgnore !== lastIgnored) {
         lastIgnored = shouldIgnore
         if (shouldIgnore) {
-          window.clui.setIgnoreMouseEvents(true, { forward: true })
+          window.clod.setIgnoreMouseEvents(true, { forward: true })
         } else {
-          window.clui.setIgnoreMouseEvents(false)
+          window.clod.setIgnoreMouseEvents(false)
         }
       }
     }
@@ -93,7 +134,7 @@ export default function App() {
       if (dragRef.current) return
       if (lastIgnored !== true) {
         lastIgnored = true
-        window.clui.setIgnoreMouseEvents(true, { forward: true })
+        window.clod.setIgnoreMouseEvents(true, { forward: true })
       }
     }
 
@@ -107,24 +148,24 @@ export default function App() {
 
   // Manual window drag — bypasses -webkit-app-region conflicts with setIgnoreMouseEvents
   useEffect(() => {
-    if (!window.clui?.startWindowDrag) return
+    if (!window.clod?.startWindowDrag) return
 
     const onMouseDown = (e: MouseEvent) => {
       const el = e.target as HTMLElement
       // Skip interactive elements — everything else on the card is draggable
       if (el.closest('button, input, textarea, a, select, [role="button"], [contenteditable], .cm-editor')) return
-      if (!el.closest('[data-clui-ui]')) return
+      if (!el.closest('[data-clod-ui]')) return
       e.preventDefault()
       // Double-click: snap back to default position
       if (e.detail >= 2) {
-        window.clui.resetWindowPosition()
+        window.clod.resetWindowPosition()
         windowYRef.current = initialWindowY
         cardYRef.current = 0
-        document.documentElement.style.setProperty('--clui-card-y', '0px')
+        document.documentElement.style.setProperty('--clod-card-y', '0px')
         return
       }
       // Ensure full mouse capture for the duration of the drag
-      window.clui.setIgnoreMouseEvents(false)
+      window.clod.setIgnoreMouseEvents(false)
       dragRef.current = { startX: e.screenX, startY: e.screenY }
     }
 
@@ -134,7 +175,7 @@ export default function App() {
       const dy = e.screenY - dragRef.current.startY
       if (dx !== 0 || dy !== 0) {
         // Horizontal: always native window movement (full screen width range)
-        if (dx !== 0) window.clui.startWindowDrag(dx, 0)
+        if (dx !== 0) window.clod.startWindowDrag(dx, 0)
         // Vertical: move window first (until macOS y constraint), then CSS within window
         if (dy !== 0) {
           if (dy < 0) {
@@ -143,12 +184,12 @@ export default function App() {
             const windowDy = Math.max(-windowCanMove, dy)
             const cssDy = dy - windowDy
             if (windowDy !== 0) {
-              window.clui.startWindowDrag(0, windowDy)
+              window.clod.startWindowDrag(0, windowDy)
               windowYRef.current += windowDy
             }
             if (cssDy !== 0) {
               cardYRef.current += cssDy
-              document.documentElement.style.setProperty('--clui-card-y', `${cardYRef.current}px`)
+              document.documentElement.style.setProperty('--clod-card-y', `${cardYRef.current}px`)
             }
           } else {
             // Moving down — undo CSS first, then move window
@@ -156,10 +197,10 @@ export default function App() {
             const windowDy = dy - cssUndo
             if (cssUndo !== 0) {
               cardYRef.current += cssUndo
-              document.documentElement.style.setProperty('--clui-card-y', `${cardYRef.current}px`)
+              document.documentElement.style.setProperty('--clod-card-y', `${cardYRef.current}px`)
             }
             if (windowDy !== 0) {
-              window.clui.startWindowDrag(0, windowDy)
+              window.clod.startWindowDrag(0, windowDy)
               windowYRef.current += windowDy
             }
           }
@@ -185,7 +226,6 @@ export default function App() {
 
   const isExpanded = useSessionStore((s) => s.isExpanded)
   const marketplaceOpen = useSessionStore((s) => s.marketplaceOpen)
-  const isRunning = activeTabStatus === 'running' || activeTabStatus === 'connecting'
 
   // Layout dimensions — expandedUI widens and heightens the panel
   const contentWidth = expandedUI ? 700 : spacing.contentWidth
@@ -194,29 +234,26 @@ export default function App() {
   const cardCollapsedMargin = expandedUI ? 15 : 15
   const bodyMaxHeight = expandedUI ? 520 : 400
 
-  const handleScreenshot = useCallback(async () => {
-    const result = await window.clui.takeScreenshot()
-    if (!result) return
-    addAttachments([result])
-  }, [addAttachments])
-
-  const handleAttachFile = useCallback(async () => {
-    const files = await window.clui.attachFiles()
-    if (!files || files.length === 0) return
-    addAttachments(files)
-  }, [addAttachments])
-
   return (
     <PopoverLayerProvider>
-      <div className="flex flex-col justify-end h-full" style={{ background: 'transparent' }}>
+      <div
+        className="flex flex-col justify-end h-full"
+        style={{
+          background: 'transparent',
+          // Horizontal anchor: right mode pins the column to the window's right
+          // edge (which sits at the screen's right edge); center mode uses margin auto.
+          alignItems: windowPosition === 'right' ? 'flex-end' : undefined,
+          paddingRight: windowPosition === 'right' ? 16 : 0,
+        }}
+      >
 
-        {/* ─── 460px content column, centered. Circles overflow left. ─── */}
-        <div style={{ width: contentWidth, position: 'relative', margin: '0 auto', transition: 'width 0.26s cubic-bezier(0.4, 0, 0.1, 1)', transform: 'translateY(var(--clui-card-y, 0px))' }}>
+        {/* ─── content column. Circles overflow left. ─── */}
+        <div style={{ width: contentWidth, position: 'relative', margin: windowPosition === 'right' ? '0' : '0 auto', transition: 'width 0.26s cubic-bezier(0.4, 0, 0.1, 1)', transform: 'translateY(var(--clod-card-y, 0px))' }}>
 
           <AnimatePresence initial={false}>
             {marketplaceOpen && (
               <div
-                data-clui-ui
+                data-clod-ui
                 style={{
                   width: 720,
                   maxWidth: 720,
@@ -234,7 +271,7 @@ export default function App() {
                   transition={TRANSITION}
                 >
                   <div
-                    data-clui-ui
+                    data-clod-ui
                     className="glass-surface overflow-hidden no-drag"
                     style={{
                       borderRadius: 24,
@@ -254,22 +291,29 @@ export default function App() {
             panel rendered above it, never inside it.
           */}
           <motion.div
-            data-clui-ui
+            data-clod-ui
             className="overflow-hidden flex flex-col drag-region"
             animate={{
               width: isExpanded ? cardExpandedWidth : cardCollapsedWidth,
-              marginBottom: isExpanded ? 10 : -14,
+              // Collapsed: the square bottom runs straight down and tucks behind
+              // the input bar. The tab strip's extra bottom padding keeps the
+              // visible grey above and below the pill even despite this overlap.
+              marginBottom: isExpanded ? 10 : -10,
               marginLeft: isExpanded ? 0 : cardCollapsedMargin,
               marginRight: isExpanded ? 0 : cardCollapsedMargin,
               background: isExpanded ? colors.containerBg : colors.containerBgCollapsed,
               borderColor: colors.containerBorder,
               boxShadow: isExpanded ? colors.cardShadow : colors.cardShadowCollapsed,
+              // Compact: rounded top only, square bottom. Expanded: all four rounded.
+              borderBottomLeftRadius: isExpanded ? 20 : 0,
+              borderBottomRightRadius: isExpanded ? 20 : 0,
             }}
             transition={TRANSITION}
             style={{
               borderWidth: 1,
               borderStyle: 'solid',
-              borderRadius: 20,
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
               position: 'relative',
               zIndex: isExpanded ? 20 : 10,
             }}
@@ -296,51 +340,22 @@ export default function App() {
             </motion.div>
           </motion.div>
 
-          {/* ─── Input row — circles float outside left ─── */}
+          {/* ─── Input row ─── */}
           {/* marginBottom: shadow buffer so the glass-surface drop shadow isn't clipped at the native window edge */}
-          <div data-clui-ui className="relative" style={{ minHeight: 46, zIndex: 15, marginBottom: 10 }}>
-            {/* Stacked circle buttons — expand on hover */}
-            <div
-              data-clui-ui
-              className="circles-out"
-            >
-              <div className="btn-stack">
-                {/* btn-1: Attach (front, rightmost) */}
-                <button
-                  className="stack-btn stack-btn-1 glass-surface"
-                  title="Attach file"
-                  onClick={handleAttachFile}
-                  disabled={isRunning}
-                >
-                  <Paperclip size={17} />
-                </button>
-                {/* btn-2: Screenshot (middle) */}
-                <button
-                  className="stack-btn stack-btn-2 glass-surface"
-                  title="Take screenshot"
-                  onClick={handleScreenshot}
-                  disabled={isRunning}
-                >
-                  <Camera size={17} />
-                </button>
-                {/* btn-3: Skills (back, leftmost) */}
-                <button
-                  className="stack-btn stack-btn-3 glass-surface"
-                  title="Skills & Plugins"
-                  onClick={() => useSessionStore.getState().toggleMarketplace()}
-                  disabled={isRunning}
-                >
-                  <HeadCircuit size={17} />
-                </button>
-              </div>
-            </div>
-
+          <div data-clod-ui className="relative" style={{ minHeight: 46, zIndex: 15, marginBottom: 10 }}>
             {/* Input pill */}
             <div
-              data-clui-ui
+              data-clod-ui
               className="glass-surface w-full"
-              style={{ minHeight: 50, borderRadius: 25, padding: '0 6px 0 16px', background: colors.inputPillBg }}
+              style={{ position: 'relative', minHeight: 50, borderRadius: 20, padding: '0 6px 0 16px', background: colors.inputPillBg }}
+              onFocusCapture={() => setInputFocused(true)}
+              onBlurCapture={(e) => {
+                // Only blur when focus leaves the pill entirely (not when moving
+                // between the textarea and the attach/screenshot buttons).
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setInputFocused(false)
+              }}
             >
+              <AnimatedInputBorder enabled={borderAnimation} focused={inputFocused} />
               <InputBar />
             </div>
           </div>

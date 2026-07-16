@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { Clock, ChatCircle } from '@phosphor-icons/react'
+import { Clock, ChatCircle, X } from '@phosphor-icons/react'
+import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { useSessionStore } from '../stores/sessionStore'
 import { usePopoverLayer } from './PopoverLayer'
 import { useColors } from '../theme'
@@ -28,7 +29,8 @@ function formatSize(bytes: number): string {
 export function HistoryPicker() {
   const resumeSession = useSessionStore((s) => s.resumeSession)
   const isExpanded = useSessionStore((s) => s.isExpanded)
-  const activeTab = useSessionStore(
+  const activeTab = useStoreWithEqualityFn(
+    useSessionStore,
     (s) => s.tabs.find((t) => t.id === s.activeTabId),
     (a, b) => a === b || (!!a && !!b && a.hasChosenDirectory === b.hasChosenDirectory && a.workingDirectory === b.workingDirectory),
   )
@@ -67,7 +69,7 @@ export function HistoryPicker() {
   const loadSessions = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await window.clui.listSessions(effectiveProjectPath)
+      const result = await window.clod.listSessions(effectiveProjectPath)
       setSessions(result)
     } catch {
       setSessions([])
@@ -103,6 +105,14 @@ export function HistoryPicker() {
     void resumeSession(session.sessionId, title, effectiveProjectPath)
   }
 
+  const handleDelete = async (e: React.MouseEvent, session: SessionMeta) => {
+    e.stopPropagation()
+    // Optimistically remove; restore on failure.
+    setSessions((prev) => prev.filter((s) => s.sessionId !== session.sessionId))
+    const ok = await window.clod.deleteSession(session.sessionId, effectiveProjectPath).catch(() => false)
+    if (!ok) void loadSessions()
+  }
+
   return (
     <>
       <button
@@ -118,7 +128,7 @@ export function HistoryPicker() {
       {popoverLayer && open && createPortal(
         <motion.div
           ref={popoverRef}
-          data-clui-ui
+          data-clod-ui
           initial={{ opacity: 0, y: isExpanded ? -4 : 4 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: isExpanded ? -4 : 4 }}
@@ -160,23 +170,36 @@ export function HistoryPicker() {
             )}
 
             {!loading && sessions.map((session) => (
-              <button
+              <div
                 key={session.sessionId}
-                onClick={() => handleSelect(session)}
-                className="w-full flex items-start gap-2.5 px-3 py-2 text-left transition-colors"
+                className="group w-full flex items-center gap-1 pr-1.5"
               >
-                <ChatCircle size={13} className="flex-shrink-0 mt-0.5" style={{ color: colors.textTertiary }} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11px] truncate" style={{ color: colors.textPrimary }}>
-                    {session.firstMessage || session.slug || session.sessionId.substring(0, 8)}
+                <button
+                  onClick={() => handleSelect(session)}
+                  className="flex items-start gap-2.5 pl-3 pr-1 py-2 text-left transition-colors flex-1 min-w-0"
+                >
+                  <ChatCircle size={13} className="flex-shrink-0 mt-0.5" style={{ color: colors.textTertiary }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11px] truncate" style={{ color: colors.textPrimary }}>
+                      {session.firstMessage || session.slug || session.sessionId.substring(0, 8)}
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] mt-0.5" style={{ color: colors.textTertiary }}>
+                      <span>{formatTimeAgo(session.lastTimestamp)}</span>
+                      <span>{formatSize(session.size)}</span>
+                      {session.slug && <span className="truncate">{session.slug}</span>}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] mt-0.5" style={{ color: colors.textTertiary }}>
-                    <span>{formatTimeAgo(session.lastTimestamp)}</span>
-                    <span>{formatSize(session.size)}</span>
-                    {session.slug && <span className="truncate">{session.slug}</span>}
-                  </div>
-                </div>
-              </button>
+                </button>
+                <button
+                  onClick={(e) => handleDelete(e, session)}
+                  title="Delete session"
+                  aria-label="Delete session"
+                  className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ color: colors.textTertiary }}
+                >
+                  <X size={11} weight="bold" />
+                </button>
+              </div>
             ))}
           </div>
         </motion.div>,

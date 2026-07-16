@@ -1,11 +1,11 @@
-# Agent Guide — Clui CC
+# Agent Guide — Clod
 
 > This file is optimized for AI coding agents (Claude Code, Cursor, Copilot, etc.).
 > For human-readable docs see [ARCHITECTURE.md](ARCHITECTURE.md) and [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## What This Project Is
 
-Clui CC is a **macOS-only Electron overlay** that wraps the Claude Code CLI (`claude -p --output-format stream-json`) in a floating pill UI. It is NOT a web app, NOT a VS Code extension, and does NOT call the Anthropic API directly — it spawns CLI subprocesses.
+Clod is a **macOS-only Electron overlay** that wraps the Claude Code CLI (`claude -p --output-format stream-json`) in a floating pill UI. It is NOT a web app, NOT a VS Code extension, and does NOT call the Anthropic API directly — it spawns CLI subprocesses.
 
 ## Quick Reference
 
@@ -15,7 +15,7 @@ Clui CC is a **macOS-only Electron overlay** that wraps the Claude Code CLI (`cl
 | Dev mode (hot-reload) | `npm run dev` |
 | Type-check / build | `npm run build` |
 | Toggle overlay | `⌥ + Space` (fallback: `Cmd+Shift+K`) |
-| Debug logging | `CLUI_DEBUG=1 npm run dev` (writes to `~/.clui-debug.log`) |
+| Debug logging | `CLOD_DEBUG=1 npm run dev` (writes to `~/.clod-debug.log`) |
 
 **Main process changes require full restart.** Renderer changes hot-reload.
 
@@ -34,7 +34,7 @@ Claude Code CLI (claude -p --output-format stream-json)
 | Layer | Directory | Manages |
 |-------|-----------|---------|
 | **Renderer** | `src/renderer/` | UI state, theming, user input, message display |
-| **Preload** | `src/preload/` | Typed IPC bridge (`window.clui` API). Security boundary. |
+| **Preload** | `src/preload/` | Typed IPC bridge (`window.clod` API). Security boundary. |
 | **Main** | `src/main/` | Process lifecycle, tab state machine, permission server, marketplace |
 
 ### Key Files by Concern
@@ -55,8 +55,8 @@ Claude Code CLI (claude -p --output-format stream-json)
 ## Data Flow: Prompt → Response
 
 ```
-InputBar.tsx → window.clui.prompt(tabId, requestId, opts)
-  → ipcRenderer.invoke('clui:prompt')
+InputBar.tsx → window.clod.prompt(tabId, requestId, opts)
+  → ipcRenderer.invoke('clod:prompt')
   → ControlPlane.prompt()
   → RunManager spawns: claude -p --output-format stream-json --resume <sid>
   → stdout emits NDJSON lines
@@ -110,7 +110,7 @@ All IPC and event types live in `src/shared/types.ts`. Key types:
 1. Add channel name to `IPC` const in `src/shared/types.ts`
 2. Add handler in `src/main/index.ts` (`ipcMain.handle` or `ipcMain.on`)
 3. Expose via `contextBridge` in `src/preload/index.ts`
-4. Call from renderer via `window.clui.*`
+4. Call from renderer via `window.clod.*`
 
 ### New UI component
 1. Create in `src/renderer/components/`

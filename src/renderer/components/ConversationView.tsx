@@ -2,6 +2,9 @@ import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import {
   FileText, PencilSimple, FileArrowUp, Terminal, MagnifyingGlass, Globe,
   Robot, Question, Wrench, FolderOpen, Copy, Check, CaretRight, CaretDown,
@@ -17,7 +20,8 @@ import type { Message } from '../../shared/types'
 
 const INITIAL_RENDER_CAP = 100
 const PAGE_SIZE = 100
-const REMARK_PLUGINS = [remarkGfm] // Hoisted — prevents re-parse on every render
+const REMARK_PLUGINS = [remarkGfm, remarkMath] // Hoisted — prevents re-parse on every render
+const REHYPE_PLUGINS = [rehypeKatex]
 
 // ─── Types ───
 
@@ -142,7 +146,7 @@ export function ConversationView() {
 
   return (
     <div
-      data-clui-ui
+      data-clod-ui
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -288,7 +292,7 @@ function EmptyState() {
   const colors = useColors()
 
   const handleChooseFolder = async () => {
-    const dir = await window.clui.selectDirectory()
+    const dir = await window.clod.selectDirectory()
     if (dir) {
       setBaseDirectory(dir)
     }
@@ -354,13 +358,54 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+// ─── Code block with its own copy button ───
+
+/** Recursively pull the plain text out of a react-markdown code node. */
+function extractCodeText(node: any): string {
+  if (node == null) return ''
+  if (typeof node === 'string') return node
+  if (Array.isArray(node)) return node.map(extractCodeText).join('')
+  if (node.props && node.props.children != null) return extractCodeText(node.props.children)
+  return ''
+}
+
+/** Replaces the default markdown <pre>; copies ONLY this block's code. */
+function CodeBlock({ children }: { children: React.ReactNode }) {
+  const colors = useColors()
+  const [copied, setCopied] = useState(false)
+  const text = extractCodeText(children).replace(/\n$/, '')
+
+  const handleCopy = async () => {
+    try { await navigator.clipboard.writeText(text) }
+    catch { try { window.clod.copyToClipboard(text) } catch {} }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className="relative group/code">
+      <pre>{children}</pre>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="absolute top-1.5 right-1.5 flex items-center justify-center w-6 h-6 rounded-md opacity-0 group-hover/code:opacity-100 transition-opacity"
+        style={{ background: colors.surfaceHover, color: copied ? colors.statusComplete : colors.textTertiary }}
+        title="Copy code"
+        aria-label="Copy code"
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+      </button>
+    </div>
+  )
+}
+
 // ─── Interrupt Button ───
 
 function InterruptButton({ tabId }: { tabId: string }) {
   const colors = useColors()
 
   const handleStop = () => {
-    window.clui.stopTab(tabId)
+    window.clod.stopTab(tabId)
   }
 
   return (
@@ -514,7 +559,7 @@ function ImageCard({ src, alt, colors }: { src?: string; alt?: string; colors: R
   // Reset failed state when src changes (e.g. during streaming)
   useEffect(() => { setFailed(false) }, [src])
   const label = alt || 'Image'
-  const open = () => { if (src) window.clui.openExternal(String(src)) }
+  const open = () => { if (src) window.clod.openExternal(String(src)) }
 
   if (failed || !src) {
     return (
@@ -567,6 +612,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
   const colors = useColors()
 
   const markdownComponents = useMemo(() => ({
+    pre: ({ children }: any) => <CodeBlock>{children}</CodeBlock>,
     table: ({ children }: any) => <TableScrollWrapper>{children}</TableScrollWrapper>,
     a: ({ href, children }: any) => (
       <button
@@ -574,7 +620,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
         className="underline decoration-dotted underline-offset-2 cursor-pointer"
         style={{ color: colors.accent }}
         onClick={() => {
-          if (href) window.clui.openExternal(String(href))
+          if (href) window.clod.openExternal(String(href))
         }}
       >
         {children}
@@ -586,7 +632,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
   const inner = (
     <div className="group/msg relative">
       <div className="text-[13px] leading-[1.6] prose-cloud min-w-0 max-w-[92%]">
-        <Markdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
+        <Markdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={markdownComponents}>
           {message.content}
         </Markdown>
       </div>

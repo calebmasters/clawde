@@ -1,12 +1,13 @@
-import type { CluiAPI } from '../preload/index'
-
-declare module '*.mp3' {
-  const src: string
-  export default src
-}
+import type { ClodAPI } from '../preload/index'
 
 declare global {
   interface Window {
-    clui: CluiAPI
+    clod: ClodAPI
+  }
+
+  // Non-standard but present on macOS: usable screen area excluding the menu bar.
+  interface Screen {
+    availTop: number
+    availLeft: number
   }
 }

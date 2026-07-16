@@ -2,9 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/types'
 import type { RunOptions, NormalizedEvent, HealthReport, EnrichedError, Attachment, SessionMeta, CatalogPlugin, SessionLoadMessage } from '../shared/types'
 
-export interface CluiAPI {
+export interface ClodAPI {
   // ─── Request-response (renderer → main) ───
-  start(): Promise<{ version: string; auth: { email?: string; subscriptionType?: string; authMethod?: string }; mcpServers: string[]; projectPath: string; homePath: string }>
+  start(): Promise<{ version: string; auth: { email?: string; subscriptionType?: string; authMethod?: string }; mcpServers: string[]; projectPath: string; homePath: string; defaultDir: string }>
   createTab(): Promise<{ tabId: string }>
   prompt(tabId: string, requestId: string, options: RunOptions): Promise<void>
   cancel(requestId: string): Promise<boolean>
@@ -26,11 +26,17 @@ export interface CluiAPI {
   resetTabSession(tabId: string): void
   listSessions(projectPath?: string): Promise<SessionMeta[]>
   loadSession(sessionId: string, projectPath?: string): Promise<SessionLoadMessage[]>
+  deleteSession(sessionId: string, projectPath?: string): Promise<boolean>
   fetchMarketplace(forceRefresh?: boolean): Promise<{ plugins: CatalogPlugin[]; error: string | null }>
   listInstalledPlugins(): Promise<string[]>
   installPlugin(repo: string, pluginName: string, marketplace: string, sourcePath?: string, isSkillMd?: boolean): Promise<{ ok: boolean; error?: string }>
   uninstallPlugin(pluginName: string): Promise<{ ok: boolean; error?: string }>
   setPermissionMode(mode: string): void
+  setHotkey(mode: 'double-option' | 'accelerator', accelerator: string): void
+  copyToClipboard(text: string): void
+  setOpenAtLogin(enabled: boolean): void
+  checkAccessibility(): Promise<boolean>
+  openAccessibilitySettings(): Promise<boolean>
   getTheme(): Promise<{ isDark: boolean }>
   onThemeChange(callback: (isDark: boolean) => void): () => void
 
@@ -44,8 +50,10 @@ export interface CluiAPI {
   setIgnoreMouseEvents(ignore: boolean, options?: { forward?: boolean }): void
   /** Manual window drag for frameless windows */
   startWindowDrag(deltaX: number, deltaY: number): void
-  /** Reset overlay to its default bottom-center position */
+  /** Reset overlay to its default position */
   resetWindowPosition(): void
+  /** Set the overlay's horizontal anchor: 'center' or 'right' */
+  setWindowPosition(pos: 'center' | 'right'): void
 
   // ─── Event listeners (main → renderer) ───
   onEvent(callback: (tabId: string, event: NormalizedEvent) => void): () => void
@@ -55,7 +63,7 @@ export interface CluiAPI {
   onWindowShown(callback: () => void): () => void
 }
 
-const api: CluiAPI = {
+const api: ClodAPI = {
   // ─── Request-response ───
   start: () => ipcRenderer.invoke(IPC.START),
   createTab: () => ipcRenderer.invoke(IPC.CREATE_TAB),
@@ -80,6 +88,7 @@ const api: CluiAPI = {
   resetTabSession: (tabId) => ipcRenderer.send(IPC.RESET_TAB_SESSION, tabId),
   listSessions: (projectPath?: string) => ipcRenderer.invoke(IPC.LIST_SESSIONS, projectPath),
   loadSession: (sessionId: string, projectPath?: string) => ipcRenderer.invoke(IPC.LOAD_SESSION, { sessionId, projectPath }),
+  deleteSession: (sessionId: string, projectPath?: string) => ipcRenderer.invoke(IPC.DELETE_SESSION, { sessionId, projectPath }),
   fetchMarketplace: (forceRefresh) => ipcRenderer.invoke(IPC.MARKETPLACE_FETCH, { forceRefresh }),
   listInstalledPlugins: () => ipcRenderer.invoke(IPC.MARKETPLACE_INSTALLED),
   installPlugin: (repo, pluginName, marketplace, sourcePath, isSkillMd) =>
@@ -87,6 +96,11 @@ const api: CluiAPI = {
   uninstallPlugin: (pluginName) =>
     ipcRenderer.invoke(IPC.MARKETPLACE_UNINSTALL, { pluginName }),
   setPermissionMode: (mode) => ipcRenderer.send(IPC.SET_PERMISSION_MODE, mode),
+  setHotkey: (mode, accelerator) => ipcRenderer.send(IPC.SET_HOTKEY, mode, accelerator),
+  copyToClipboard: (text) => ipcRenderer.send(IPC.COPY_TO_CLIPBOARD, text),
+  setOpenAtLogin: (enabled) => ipcRenderer.send(IPC.SET_OPEN_AT_LOGIN, enabled),
+  checkAccessibility: () => ipcRenderer.invoke(IPC.CHECK_ACCESSIBILITY),
+  openAccessibilitySettings: () => ipcRenderer.invoke(IPC.OPEN_ACCESSIBILITY_SETTINGS),
   getTheme: () => ipcRenderer.invoke(IPC.GET_THEME),
   onThemeChange: (callback) => {
     const handler = (_e: Electron.IpcRendererEvent, isDark: boolean) => callback(isDark)
@@ -105,6 +119,7 @@ const api: CluiAPI = {
   startWindowDrag: (deltaX, deltaY) =>
     ipcRenderer.send(IPC.START_WINDOW_DRAG, deltaX, deltaY),
   resetWindowPosition: () => ipcRenderer.send(IPC.RESET_WINDOW_POSITION),
+  setWindowPosition: (pos) => ipcRenderer.send(IPC.SET_WINDOW_POSITION, pos),
   setWindowWidth: (width) => ipcRenderer.send(IPC.SET_WINDOW_WIDTH, width),
 
   // ─── Event listeners ───
@@ -116,22 +131,22 @@ const api: CluiAPI = {
     ]
     // Single unified handler — all normalized events come through one channel
     const handler = (_e: Electron.IpcRendererEvent, tabId: string, event: NormalizedEvent) => callback(tabId, event)
-    ipcRenderer.on('clui:normalized-event', handler)
-    return () => ipcRenderer.removeListener('clui:normalized-event', handler)
+    ipcRenderer.on('clod:normalized-event', handler)
+    return () => ipcRenderer.removeListener('clod:normalized-event', handler)
   },
 
   onTabStatusChange: (callback) => {
     const handler = (_e: Electron.IpcRendererEvent, tabId: string, newStatus: string, oldStatus: string) =>
       callback(tabId, newStatus, oldStatus)
-    ipcRenderer.on('clui:tab-status-change', handler)
-    return () => ipcRenderer.removeListener('clui:tab-status-change', handler)
+    ipcRenderer.on('clod:tab-status-change', handler)
+    return () => ipcRenderer.removeListener('clod:tab-status-change', handler)
   },
 
   onError: (callback) => {
     const handler = (_e: Electron.IpcRendererEvent, tabId: string, error: EnrichedError) =>
       callback(tabId, error)
-    ipcRenderer.on('clui:enriched-error', handler)
-    return () => ipcRenderer.removeListener('clui:enriched-error', handler)
+    ipcRenderer.on('clod:enriched-error', handler)
+    return () => ipcRenderer.removeListener('clod:enriched-error', handler)
   },
 
   onSkillStatus: (callback) => {
@@ -147,4 +162,4 @@ const api: CluiAPI = {
   },
 }
 
-contextBridge.exposeInMainWorld('clui', api)
+contextBridge.exposeInMainWorld('clod', api)

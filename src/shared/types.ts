@@ -208,6 +208,21 @@ export type NormalizedEvent =
 
 // ─── Run Options ───
 
+/**
+ * An image to embed directly (inline) in the user message as a base64 image
+ * content block, so the model sees the pixels without a Read tool round-trip.
+ */
+export interface InlineImage {
+  /** MIME type, e.g. 'image/png'. */
+  mediaType: string
+  /** Base64-encoded image data — NO `data:` URL prefix. */
+  data: string
+  /** Original file path — used for a text fallback if the image can't be inlined. */
+  path?: string
+  /** Display name — used in the fallback text reference. */
+  name?: string
+}
+
 export interface RunOptions {
   prompt: string
   projectPath: string
@@ -217,10 +232,14 @@ export interface RunOptions {
   maxBudgetUsd?: number
   systemPrompt?: string
   model?: string
-  /** Path to CLUI-scoped settings file with hook config (passed via --settings) */
+  /** Path to CLOD-scoped settings file with hook config (passed via --settings) */
   hookSettingsPath?: string
   /** Extra directories to add via --add-dir (session-preserving) */
   addDirs?: string[]
+  /** Permission mode for this run: 'auto' bypasses all approvals at the CLI level. */
+  permissionMode?: 'ask' | 'auto'
+  /** Images to embed inline as image content blocks in the stream-json user message. */
+  images?: InlineImage[]
 }
 
 // ─── Control Plane Types ───
@@ -298,70 +317,85 @@ export interface CatalogPlugin {
 
 export const IPC = {
   // Request-response (renderer → main)
-  START: 'clui:start',
-  CREATE_TAB: 'clui:create-tab',
-  PROMPT: 'clui:prompt',
-  CANCEL: 'clui:cancel',
-  STOP_TAB: 'clui:stop-tab',
-  RETRY: 'clui:retry',
-  STATUS: 'clui:status',
-  TAB_HEALTH: 'clui:tab-health',
-  CLOSE_TAB: 'clui:close-tab',
-  SELECT_DIRECTORY: 'clui:select-directory',
-  OPEN_EXTERNAL: 'clui:open-external',
-  OPEN_IN_TERMINAL: 'clui:open-in-terminal',
-  ATTACH_FILES: 'clui:attach-files',
-  TAKE_SCREENSHOT: 'clui:take-screenshot',
-  TRANSCRIBE_AUDIO: 'clui:transcribe-audio',
-  PASTE_IMAGE: 'clui:paste-image',
-  GET_DIAGNOSTICS: 'clui:get-diagnostics',
-  RESPOND_PERMISSION: 'clui:respond-permission',
-  INIT_SESSION: 'clui:init-session',
-  RESET_TAB_SESSION: 'clui:reset-tab-session',
-  ANIMATE_HEIGHT: 'clui:animate-height',
-  LIST_SESSIONS: 'clui:list-sessions',
-  LOAD_SESSION: 'clui:load-session',
+  START: 'clod:start',
+  CREATE_TAB: 'clod:create-tab',
+  PROMPT: 'clod:prompt',
+  CANCEL: 'clod:cancel',
+  STOP_TAB: 'clod:stop-tab',
+  RETRY: 'clod:retry',
+  STATUS: 'clod:status',
+  TAB_HEALTH: 'clod:tab-health',
+  CLOSE_TAB: 'clod:close-tab',
+  SELECT_DIRECTORY: 'clod:select-directory',
+  OPEN_EXTERNAL: 'clod:open-external',
+  OPEN_IN_TERMINAL: 'clod:open-in-terminal',
+  ATTACH_FILES: 'clod:attach-files',
+  TAKE_SCREENSHOT: 'clod:take-screenshot',
+  TRANSCRIBE_AUDIO: 'clod:transcribe-audio',
+  PASTE_IMAGE: 'clod:paste-image',
+  GET_DIAGNOSTICS: 'clod:get-diagnostics',
+  RESPOND_PERMISSION: 'clod:respond-permission',
+  INIT_SESSION: 'clod:init-session',
+  RESET_TAB_SESSION: 'clod:reset-tab-session',
+  ANIMATE_HEIGHT: 'clod:animate-height',
+  LIST_SESSIONS: 'clod:list-sessions',
+  LOAD_SESSION: 'clod:load-session',
+  DELETE_SESSION: 'clod:delete-session',
 
   // One-way events (main → renderer)
-  TEXT_CHUNK: 'clui:text-chunk',
-  TOOL_CALL: 'clui:tool-call',
-  TOOL_CALL_UPDATE: 'clui:tool-call-update',
-  TOOL_CALL_COMPLETE: 'clui:tool-call-complete',
-  TASK_UPDATE: 'clui:task-update',
-  TASK_COMPLETE: 'clui:task-complete',
-  SESSION_DEAD: 'clui:session-dead',
-  SESSION_INIT: 'clui:session-init',
-  ERROR: 'clui:error',
-  RATE_LIMIT: 'clui:rate-limit',
+  TEXT_CHUNK: 'clod:text-chunk',
+  TOOL_CALL: 'clod:tool-call',
+  TOOL_CALL_UPDATE: 'clod:tool-call-update',
+  TOOL_CALL_COMPLETE: 'clod:tool-call-complete',
+  TASK_UPDATE: 'clod:task-update',
+  TASK_COMPLETE: 'clod:task-complete',
+  SESSION_DEAD: 'clod:session-dead',
+  SESSION_INIT: 'clod:session-init',
+  ERROR: 'clod:error',
+  RATE_LIMIT: 'clod:rate-limit',
 
   // Window management
-  RESIZE_HEIGHT: 'clui:resize-height',
-  SET_WINDOW_WIDTH: 'clui:set-window-width',
-  HIDE_WINDOW: 'clui:hide-window',
-  WINDOW_SHOWN: 'clui:window-shown',
-  SET_IGNORE_MOUSE_EVENTS: 'clui:set-ignore-mouse-events',
-  START_WINDOW_DRAG: 'clui:start-window-drag',
-  RESET_WINDOW_POSITION: 'clui:reset-window-position',
-  IS_VISIBLE: 'clui:is-visible',
+  RESIZE_HEIGHT: 'clod:resize-height',
+  SET_WINDOW_WIDTH: 'clod:set-window-width',
+  HIDE_WINDOW: 'clod:hide-window',
+  WINDOW_SHOWN: 'clod:window-shown',
+  SET_IGNORE_MOUSE_EVENTS: 'clod:set-ignore-mouse-events',
+  START_WINDOW_DRAG: 'clod:start-window-drag',
+  RESET_WINDOW_POSITION: 'clod:reset-window-position',
+  SET_WINDOW_POSITION: 'clod:set-window-position',
+  IS_VISIBLE: 'clod:is-visible',
 
   // Skill provisioning (main → renderer)
-  SKILL_STATUS: 'clui:skill-status',
+  SKILL_STATUS: 'clod:skill-status',
 
   // Theme
-  GET_THEME: 'clui:get-theme',
-  THEME_CHANGED: 'clui:theme-changed',
+  GET_THEME: 'clod:get-theme',
+  THEME_CHANGED: 'clod:theme-changed',
 
   // Marketplace
-  MARKETPLACE_FETCH: 'clui:marketplace-fetch',
-  MARKETPLACE_INSTALLED: 'clui:marketplace-installed',
-  MARKETPLACE_INSTALL: 'clui:marketplace-install',
-  MARKETPLACE_UNINSTALL: 'clui:marketplace-uninstall',
+  MARKETPLACE_FETCH: 'clod:marketplace-fetch',
+  MARKETPLACE_INSTALLED: 'clod:marketplace-installed',
+  MARKETPLACE_INSTALL: 'clod:marketplace-install',
+  MARKETPLACE_UNINSTALL: 'clod:marketplace-uninstall',
 
   // Permission mode
-  SET_PERMISSION_MODE: 'clui:set-permission-mode',
+  SET_PERMISSION_MODE: 'clod:set-permission-mode',
+
+  // Overlay toggle hotkey (double-tap Option or a custom accelerator)
+  SET_HOTKEY: 'clod:set-hotkey',
+
+  // Write text to the system clipboard
+  COPY_TO_CLIPBOARD: 'clod:copy-to-clipboard',
+
+  // Launch Clod automatically at login
+  SET_OPEN_AT_LOGIN: 'clod:set-open-at-login',
+
+  // Accessibility permission (needed by the double-tap Option key hook)
+  CHECK_ACCESSIBILITY: 'clod:check-accessibility',
+  OPEN_ACCESSIBILITY_SETTINGS: 'clod:open-accessibility-settings',
 
   // Legacy (kept for backward compat during migration)
-  STREAM_EVENT: 'clui:stream-event',
-  RUN_COMPLETE: 'clui:run-complete',
-  RUN_ERROR: 'clui:run-error',
+  STREAM_EVENT: 'clod:stream-event',
+  RUN_COMPLETE: 'clod:run-complete',
+  RUN_ERROR: 'clod:run-error',
 } as const

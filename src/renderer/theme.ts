@@ -1,5 +1,5 @@
 /**
- * CLUI Design Tokens — Dual theme (dark + light)
+ * CLOD Design Tokens — Dual theme (dark + light)
  * Colors derived from ChatCN oklch system and design-fixed.html reference.
  */
 import { create } from 'zustand'
@@ -24,7 +24,7 @@ const darkColors = {
   // Input
   inputBg: 'transparent',
   inputBorder: '#3b3b36',
-  inputFocusBorder: 'rgba(217, 119, 87, 0.4)',
+  inputFocusBorder: 'rgba(193, 95, 60, 0.4)',
   inputPillBg: '#2a2a27',
 
   // Text
@@ -34,21 +34,21 @@ const darkColors = {
   textMuted: '#353530',
 
   // Accent — orange
-  accent: '#d97757',
-  accentLight: 'rgba(217, 119, 87, 0.1)',
-  accentSoft: 'rgba(217, 119, 87, 0.15)',
+  accent: '#C15F3C',
+  accentLight: 'rgba(193, 95, 60, 0.1)',
+  accentSoft: 'rgba(193, 95, 60, 0.15)',
 
   // Status dots
   statusIdle: '#8a8a80',
-  statusRunning: '#d97757',
-  statusRunningBg: 'rgba(217, 119, 87, 0.1)',
+  statusRunning: '#C15F3C',
+  statusRunningBg: 'rgba(193, 95, 60, 0.1)',
   statusComplete: '#7aac8c',
   statusCompleteBg: 'rgba(122, 172, 140, 0.1)',
   statusError: '#c47060',
   statusErrorBg: 'rgba(196, 112, 96, 0.08)',
   statusDead: '#c47060',
-  statusPermission: '#d97757',
-  statusPermissionGlow: 'rgba(217, 119, 87, 0.4)',
+  statusPermission: '#C15F3C',
+  statusPermissionGlow: 'rgba(193, 95, 60, 0.4)',
 
   // Tab
   tabActive: '#353530',
@@ -64,13 +64,13 @@ const darkColors = {
   // Tool card
   toolBg: '#353530',
   toolBorder: '#4a4a45',
-  toolRunningBorder: 'rgba(217, 119, 87, 0.3)',
-  toolRunningBg: 'rgba(217, 119, 87, 0.05)',
+  toolRunningBorder: 'rgba(193, 95, 60, 0.3)',
+  toolRunningBg: 'rgba(193, 95, 60, 0.05)',
 
   // Timeline
   timelineLine: '#353530',
-  timelineNode: 'rgba(217, 119, 87, 0.2)',
-  timelineNodeActive: '#d97757',
+  timelineNode: 'rgba(193, 95, 60, 0.2)',
+  timelineNodeActive: '#C15F3C',
 
   // Scrollbar
   scrollThumb: 'rgba(255, 255, 255, 0.15)',
@@ -81,9 +81,9 @@ const darkColors = {
   stopHover: '#dc2626',
 
   // Send button
-  sendBg: '#d97757',
-  sendHover: '#c96442',
-  sendDisabled: 'rgba(217, 119, 87, 0.3)',
+  sendBg: '#C15F3C',
+  sendHover: '#A5502F',
+  sendDisabled: 'rgba(193, 95, 60, 0.3)',
 
   // Popover
   popoverBg: '#292927',
@@ -112,8 +112,8 @@ const darkColors = {
   btnHoverBg: '#302f2d',
 
   // Accent border variants (replaces hex-alpha concatenation antipattern)
-  accentBorder: 'rgba(217, 119, 87, 0.19)',
-  accentBorderMedium: 'rgba(217, 119, 87, 0.25)',
+  accentBorder: 'rgba(193, 95, 60, 0.19)',
+  accentBorderMedium: 'rgba(193, 95, 60, 0.25)',
 
   // Permission card (amber)
   permissionBorder: 'rgba(245, 158, 11, 0.3)',
@@ -158,7 +158,7 @@ const lightColors = {
   // Input
   inputBg: 'transparent',
   inputBorder: '#dddad2',
-  inputFocusBorder: 'rgba(217, 119, 87, 0.4)',
+  inputFocusBorder: 'rgba(193, 95, 60, 0.4)',
   inputPillBg: '#ffffff',
 
   // Text
@@ -168,21 +168,21 @@ const lightColors = {
   textMuted: '#dddad2',
 
   // Accent — orange (same)
-  accent: '#d97757',
-  accentLight: 'rgba(217, 119, 87, 0.1)',
-  accentSoft: 'rgba(217, 119, 87, 0.12)',
+  accent: '#C15F3C',
+  accentLight: 'rgba(193, 95, 60, 0.1)',
+  accentSoft: 'rgba(193, 95, 60, 0.12)',
 
   // Status dots
   statusIdle: '#8a8a80',
-  statusRunning: '#d97757',
-  statusRunningBg: 'rgba(217, 119, 87, 0.1)',
+  statusRunning: '#C15F3C',
+  statusRunningBg: 'rgba(193, 95, 60, 0.1)',
   statusComplete: '#5a9e6f',
   statusCompleteBg: 'rgba(90, 158, 111, 0.1)',
   statusError: '#c47060',
   statusErrorBg: 'rgba(196, 112, 96, 0.06)',
   statusDead: '#c47060',
-  statusPermission: '#d97757',
-  statusPermissionGlow: 'rgba(217, 119, 87, 0.3)',
+  statusPermission: '#C15F3C',
+  statusPermissionGlow: 'rgba(193, 95, 60, 0.3)',
 
   // Tab
   tabActive: '#edeae0',
@@ -198,13 +198,13 @@ const lightColors = {
   // Tool card
   toolBg: '#edeae0',
   toolBorder: '#dddad2',
-  toolRunningBorder: 'rgba(217, 119, 87, 0.3)',
-  toolRunningBg: 'rgba(217, 119, 87, 0.05)',
+  toolRunningBorder: 'rgba(193, 95, 60, 0.3)',
+  toolRunningBg: 'rgba(193, 95, 60, 0.05)',
 
   // Timeline
   timelineLine: '#dddad2',
-  timelineNode: 'rgba(217, 119, 87, 0.2)',
-  timelineNodeActive: '#d97757',
+  timelineNode: 'rgba(193, 95, 60, 0.2)',
+  timelineNodeActive: '#C15F3C',
 
   // Scrollbar
   scrollThumb: 'rgba(0, 0, 0, 0.1)',
@@ -215,9 +215,9 @@ const lightColors = {
   stopHover: '#dc2626',
 
   // Send button
-  sendBg: '#d97757',
-  sendHover: '#c96442',
-  sendDisabled: 'rgba(217, 119, 87, 0.3)',
+  sendBg: '#C15F3C',
+  sendHover: '#A5502F',
+  sendDisabled: 'rgba(193, 95, 60, 0.3)',
 
   // Popover
   popoverBg: '#f9f8f5',
@@ -246,8 +246,8 @@ const lightColors = {
   btnHoverBg: '#edeae0',
 
   // Accent border variants (replaces hex-alpha concatenation antipattern)
-  accentBorder: 'rgba(217, 119, 87, 0.19)',
-  accentBorderMedium: 'rgba(217, 119, 87, 0.25)',
+  accentBorder: 'rgba(193, 95, 60, 0.19)',
+  accentBorderMedium: 'rgba(193, 95, 60, 0.25)',
 
   // Permission card (amber)
   permissionBorder: 'rgba(245, 158, 11, 0.3)',
@@ -279,23 +279,43 @@ export type ColorPalette = { [K in keyof typeof darkColors]: string }
 // ─── Theme store ───
 
 export type ThemeMode = 'system' | 'light' | 'dark'
+export type WindowPosition = 'center' | 'right'
+export type HotkeyMode = 'double-option' | 'accelerator'
+
+export const DEFAULT_PLACEHOLDER = 'What do you want this time ...'
 
 interface ThemeState {
   isDark: boolean
   themeMode: ThemeMode
   soundEnabled: boolean
   expandedUI: boolean
+  windowPosition: WindowPosition
+  /** Placeholder text shown in the main input bar */
+  inputPlaceholder: string
+  /** Whether the animated orange border on the input bar is enabled */
+  borderAnimation: boolean
+  /** How the overlay is toggled: double-tap Option (default) or a custom accelerator */
+  hotkeyMode: HotkeyMode
+  /** Electron accelerator string used when hotkeyMode === 'accelerator' */
+  hotkeyAccelerator: string
+  /** Launch Clod automatically at login */
+  openAtLogin: boolean
   /** OS-reported dark mode — used when themeMode is 'system' */
   _systemIsDark: boolean
   setIsDark: (isDark: boolean) => void
   setThemeMode: (mode: ThemeMode) => void
   setSoundEnabled: (enabled: boolean) => void
   setExpandedUI: (expanded: boolean) => void
+  setWindowPosition: (pos: WindowPosition) => void
+  setInputPlaceholder: (text: string) => void
+  setBorderAnimation: (on: boolean) => void
+  setHotkey: (mode: HotkeyMode, accelerator: string) => void
+  setOpenAtLogin: (on: boolean) => void
   /** Called by OS theme change listener — updates system value */
   setSystemTheme: (isDark: boolean) => void
 }
 
-/** Convert camelCase token name to --clui-kebab-case CSS custom property */
+/** Convert camelCase token name to --clod-kebab-case CSS custom property */
 function camelToKebab(s: string): string {
   return s.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)
 }
@@ -304,7 +324,7 @@ function camelToKebab(s: string): string {
 function syncTokensToCss(tokens: ColorPalette): void {
   const style = document.documentElement.style
   for (const [key, value] of Object.entries(tokens)) {
-    style.setProperty(`--clui-${camelToKebab(key)}`, value)
+    style.setProperty(`--clod-${camelToKebab(key)}`, value)
   }
 }
 
@@ -314,63 +334,140 @@ function applyTheme(isDark: boolean): void {
   syncTokensToCss(isDark ? darkColors : lightColors)
 }
 
-const SETTINGS_KEY = 'clui-settings'
+const SETTINGS_KEY = 'clod-settings'
 
-function loadSettings(): { themeMode: ThemeMode; soundEnabled: boolean; expandedUI: boolean } {
+interface PersistedSettings {
+  themeMode: ThemeMode
+  soundEnabled: boolean
+  expandedUI: boolean
+  windowPosition: WindowPosition
+  inputPlaceholder: string
+  borderAnimation: boolean
+  hotkeyMode: HotkeyMode
+  hotkeyAccelerator: string
+  openAtLogin: boolean
+}
+
+const DEFAULT_SETTINGS: PersistedSettings = {
+  themeMode: 'dark',
+  soundEnabled: true,
+  expandedUI: true,
+  windowPosition: 'center',
+  inputPlaceholder: DEFAULT_PLACEHOLDER,
+  borderAnimation: true,
+  hotkeyMode: 'double-option',
+  hotkeyAccelerator: '',
+  openAtLogin: true,
+}
+
+function loadSettings(): PersistedSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY)
     if (raw) {
-      const parsed = JSON.parse(raw)
+      const p = JSON.parse(raw)
       return {
-        themeMode: ['light', 'dark'].includes(parsed.themeMode) ? parsed.themeMode : 'dark',
-        soundEnabled: typeof parsed.soundEnabled === 'boolean' ? parsed.soundEnabled : true,
-        expandedUI: typeof parsed.expandedUI === 'boolean' ? parsed.expandedUI : false,
+        themeMode: ['light', 'dark'].includes(p.themeMode) ? p.themeMode : 'dark',
+        soundEnabled: typeof p.soundEnabled === 'boolean' ? p.soundEnabled : true,
+        expandedUI: typeof p.expandedUI === 'boolean' ? p.expandedUI : true,
+        windowPosition: p.windowPosition === 'right' ? 'right' : 'center',
+        inputPlaceholder: typeof p.inputPlaceholder === 'string' ? p.inputPlaceholder : DEFAULT_PLACEHOLDER,
+        borderAnimation: typeof p.borderAnimation === 'boolean' ? p.borderAnimation : true,
+        hotkeyMode: p.hotkeyMode === 'accelerator' ? 'accelerator' : 'double-option',
+        hotkeyAccelerator: typeof p.hotkeyAccelerator === 'string' ? p.hotkeyAccelerator : '',
+        openAtLogin: typeof p.openAtLogin === 'boolean' ? p.openAtLogin : true,
       }
     }
   } catch {}
-  return { themeMode: 'dark', soundEnabled: true, expandedUI: false }
+  return { ...DEFAULT_SETTINGS }
 }
 
-function saveSettings(s: { themeMode: ThemeMode; soundEnabled: boolean; expandedUI: boolean }): void {
+function saveSettings(s: PersistedSettings): void {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)) } catch {}
 }
 
-// Always start in compact UI mode on launch.
-const saved = { ...loadSettings(), expandedUI: false }
+// Wide (full-width) mode is on by default; the user's saved preference wins.
+const saved = loadSettings()
 
-export const useThemeStore = create<ThemeState>((set, get) => ({
-  isDark: saved.themeMode === 'dark' ? true : saved.themeMode === 'light' ? false : true,
-  themeMode: saved.themeMode,
-  soundEnabled: saved.soundEnabled,
-  expandedUI: saved.expandedUI,
-  _systemIsDark: true,
-  setIsDark: (isDark) => {
-    set({ isDark })
-    applyTheme(isDark)
-  },
-  setThemeMode: (mode) => {
-    const resolved = mode === 'system' ? get()._systemIsDark : mode === 'dark'
-    set({ themeMode: mode, isDark: resolved })
-    applyTheme(resolved)
-    saveSettings({ themeMode: mode, soundEnabled: get().soundEnabled, expandedUI: get().expandedUI })
-  },
-  setSoundEnabled: (enabled) => {
-    set({ soundEnabled: enabled })
-    saveSettings({ themeMode: get().themeMode, soundEnabled: enabled, expandedUI: get().expandedUI })
-  },
-  setExpandedUI: (expanded) => {
-    set({ expandedUI: expanded })
-    saveSettings({ themeMode: get().themeMode, soundEnabled: get().soundEnabled, expandedUI: expanded })
-  },
-  setSystemTheme: (isDark) => {
-    set({ _systemIsDark: isDark })
-    // Only apply if following system
-    if (get().themeMode === 'system') {
+export const useThemeStore = create<ThemeState>((set, get) => {
+  // Snapshot the persistable slice of current state (call after set()).
+  const persist = () => {
+    const s = get()
+    saveSettings({
+      themeMode: s.themeMode,
+      soundEnabled: s.soundEnabled,
+      expandedUI: s.expandedUI,
+      windowPosition: s.windowPosition,
+      inputPlaceholder: s.inputPlaceholder,
+      borderAnimation: s.borderAnimation,
+      hotkeyMode: s.hotkeyMode,
+      hotkeyAccelerator: s.hotkeyAccelerator,
+      openAtLogin: s.openAtLogin,
+    })
+  }
+
+  return {
+    isDark: saved.themeMode === 'dark' ? true : saved.themeMode === 'light' ? false : true,
+    themeMode: saved.themeMode,
+    soundEnabled: saved.soundEnabled,
+    expandedUI: saved.expandedUI,
+    windowPosition: saved.windowPosition,
+    inputPlaceholder: saved.inputPlaceholder,
+    borderAnimation: saved.borderAnimation,
+    hotkeyMode: saved.hotkeyMode,
+    hotkeyAccelerator: saved.hotkeyAccelerator,
+    openAtLogin: saved.openAtLogin,
+    _systemIsDark: true,
+    setIsDark: (isDark) => {
       set({ isDark })
       applyTheme(isDark)
-    }
-  },
-}))
+    },
+    setThemeMode: (mode) => {
+      const resolved = mode === 'system' ? get()._systemIsDark : mode === 'dark'
+      set({ themeMode: mode, isDark: resolved })
+      applyTheme(resolved)
+      persist()
+    },
+    setSoundEnabled: (enabled) => {
+      set({ soundEnabled: enabled })
+      persist()
+    },
+    setExpandedUI: (expanded) => {
+      set({ expandedUI: expanded })
+      persist()
+    },
+    setWindowPosition: (pos) => {
+      set({ windowPosition: pos })
+      persist()
+      try { window.clod.setWindowPosition(pos) } catch {}
+    },
+    setInputPlaceholder: (text) => {
+      set({ inputPlaceholder: text })
+      persist()
+    },
+    setBorderAnimation: (on) => {
+      set({ borderAnimation: on })
+      persist()
+    },
+    setOpenAtLogin: (on) => {
+      set({ openAtLogin: on })
+      persist()
+      try { window.clod.setOpenAtLogin(on) } catch {}
+    },
+    setHotkey: (mode, accelerator) => {
+      set({ hotkeyMode: mode, hotkeyAccelerator: accelerator })
+      persist()
+      try { window.clod.setHotkey(mode, accelerator) } catch {}
+    },
+    setSystemTheme: (isDark) => {
+      set({ _systemIsDark: isDark })
+      // Only apply if following system
+      if (get().themeMode === 'system') {
+        set({ isDark })
+        applyTheme(isDark)
+      }
+    },
+  }
+})
 
 // Initialize CSS vars with saved theme
 syncTokensToCss(saved.themeMode === 'light' ? lightColors : darkColors)

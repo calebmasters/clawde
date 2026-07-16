@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, dialog, screen, globalShortcut, Tray, Menu, nativeImage, nativeTheme, shell, systemPreferences, session } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, screen, globalShortcut, Tray, Menu, nativeImage, nativeTheme, shell, systemPreferences, session, clipboard } from 'electron'
 import { join } from 'path'
-import { existsSync, readdirSync, statSync, createReadStream } from 'fs'
+import { existsSync, readdirSync, statSync, createReadStream, mkdirSync, unlinkSync } from 'fs'
 import { createInterface } from 'readline'
 import { homedir } from 'os'
 import { ControlPlane } from './claude/control-plane'
@@ -10,9 +10,10 @@ import { log as _log, LOG_FILE, flushLogs } from './logger'
 import { getCliEnv } from './cli-env'
 import { IPC } from '../shared/types'
 import type { RunOptions, NormalizedEvent, EnrichedError } from '../shared/types'
+import { registerOptionDoubleTap, stopOptionDoubleTap } from './option-double-tap'
 
-const DEBUG_MODE = process.env.CLUI_DEBUG === '1'
-const SPACES_DEBUG = DEBUG_MODE || process.env.CLUI_SPACES_DEBUG === '1'
+const DEBUG_MODE = process.env.CLOD_DEBUG === '1'
+const SPACES_DEBUG = DEBUG_MODE || process.env.CLOD_SPACES_DEBUG === '1'
 
 function getContentSecurityPolicy(): string {
   const isDev = !!process.env.ELECTRON_RENDERER_URL
@@ -60,7 +61,7 @@ let toggleSequence = 0
 let lastWindowBounds: Electron.Rectangle | null = null
 
 // Feature flag: enable PTY interactive permissions transport
-const INTERACTIVE_PTY = process.env.CLUI_INTERACTIVE_PERMISSIONS_PTY === '1'
+const INTERACTIVE_PTY = process.env.CLOD_INTERACTIVE_PERMISSIONS_PTY === '1'
 
 const controlPlane = new ControlPlane(INTERACTIVE_PTY)
 
@@ -69,6 +70,23 @@ const controlPlane = new ControlPlane(INTERACTIVE_PTY)
 const BAR_WIDTH = 1040
 const PILL_HEIGHT = 720  // Fixed native window height — extra room for expanded UI + shadow buffers
 const PILL_BOTTOM_MARGIN = 24
+
+// Horizontal placement of the overlay. 'center' = bottom-center (default),
+// 'right' = window pinned to the screen's right edge (renderer right-aligns content).
+type WindowPosition = 'center' | 'right'
+let windowPosition: WindowPosition = 'center'
+
+// Overlay toggle hotkey. 'double-option' = double-tap Option (default, via uiohook).
+// 'accelerator' = a custom Electron global shortcut. Cmd+Shift+K is always a fallback.
+type HotkeyMode = 'double-option' | 'accelerator'
+let hotkeyMode: HotkeyMode = 'double-option'
+let registeredAccelerator: string | null = null
+
+/** X coordinate for the window given the current position preference. */
+function computeWindowX(dx: number, sw: number): number {
+  if (windowPosition === 'right') return dx + sw - BAR_WIDTH
+  return dx + Math.round((sw - BAR_WIDTH) / 2)
+}
 
 // ─── Broadcast to renderer ───
 
@@ -115,15 +133,15 @@ function scheduleToggleSnapshots(toggleId: number, phase: 'show' | 'hide'): void
 // ─── Wire ControlPlane events → renderer ───
 
 controlPlane.on('event', (tabId: string, event: NormalizedEvent) => {
-  broadcast('clui:normalized-event', tabId, event)
+  broadcast('clod:normalized-event', tabId, event)
 })
 
 controlPlane.on('tab-status-change', (tabId: string, newStatus: string, oldStatus: string) => {
-  broadcast('clui:tab-status-change', tabId, newStatus, oldStatus)
+  broadcast('clod:tab-status-change', tabId, newStatus, oldStatus)
 })
 
 controlPlane.on('error', (tabId: string, error: EnrichedError) => {
-  broadcast('clui:enriched-error', tabId, error)
+  broadcast('clod:enriched-error', tabId, error)
 })
 
 // ─── Window Creation ───
@@ -134,7 +152,7 @@ function createWindow(): void {
   const { width: screenWidth, height: screenHeight } = display.workAreaSize
   const { x: dx, y: dy } = display.workArea
 
-  const x = dx + Math.round((screenWidth - BAR_WIDTH) / 2)
+  const x = computeWindowX(dx, screenWidth)
   const y = dy + screenHeight - PILL_HEIGHT - PILL_BOTTOM_MARGIN
 
   mainWindow = new BrowserWindow({
@@ -239,7 +257,7 @@ function resetWindowPosition(): void {
   const { x: dx, y: dy } = display.workArea
 
   mainWindow.setBounds({
-    x: dx + Math.round((sw - BAR_WIDTH) / 2),
+    x: computeWindowX(dx, sw),
     y: dy + sh - PILL_HEIGHT - PILL_BOTTOM_MARGIN,
     width: BAR_WIDTH,
     height: PILL_HEIGHT,
@@ -312,6 +330,58 @@ ipcMain.on(IPC.RESET_WINDOW_POSITION, () => {
   resetWindowPosition()
 })
 
+ipcMain.on(IPC.SET_WINDOW_POSITION, (_event, pos: string) => {
+  if (pos !== 'center' && pos !== 'right') {
+    log(`IPC SET_WINDOW_POSITION: invalid pos "${pos}" — ignoring`)
+    return
+  }
+  log(`IPC SET_WINDOW_POSITION: ${pos}`)
+  windowPosition = pos
+  resetWindowPosition() // re-place the window with the new horizontal anchor
+})
+
+// Configure the overlay toggle hotkey. Double-tap Option is handled by the always-on
+// uiohook callback (gated on hotkeyMode); a custom accelerator uses globalShortcut.
+function configureHotkey(mode: HotkeyMode, accelerator: string): void {
+  hotkeyMode = mode
+  if (registeredAccelerator) {
+    try { globalShortcut.unregister(registeredAccelerator) } catch {}
+    registeredAccelerator = null
+  }
+  if (mode === 'accelerator' && accelerator && accelerator !== 'CommandOrControl+Shift+K') {
+    try {
+      const ok = globalShortcut.register(accelerator, () => toggleWindow(`shortcut ${accelerator}`))
+      if (ok) {
+        registeredAccelerator = accelerator
+        log(`Hotkey: registered custom accelerator "${accelerator}"`)
+      } else {
+        log(`Hotkey: failed to register "${accelerator}" (already in use?)`)
+      }
+    } catch (err: any) {
+      log(`Hotkey: invalid accelerator "${accelerator}" — ${err.message}`)
+    }
+  }
+}
+
+ipcMain.on(IPC.SET_HOTKEY, (_event, mode: string, accelerator: string) => {
+  const m: HotkeyMode = mode === 'accelerator' ? 'accelerator' : 'double-option'
+  log(`IPC SET_HOTKEY: mode=${m} accel=${accelerator || '(none)'}`)
+  configureHotkey(m, typeof accelerator === 'string' ? accelerator : '')
+})
+
+ipcMain.on(IPC.COPY_TO_CLIPBOARD, (_event, text: string) => {
+  if (typeof text === 'string') clipboard.writeText(text)
+})
+
+ipcMain.on(IPC.SET_OPEN_AT_LOGIN, (_event, enabled: boolean) => {
+  try {
+    app.setLoginItemSettings({ openAtLogin: !!enabled })
+    log(`Open at login: ${enabled ? 'enabled' : 'disabled'}`)
+  } catch (err: any) {
+    log(`Open at login: failed — ${err.message}`)
+  }
+})
+
 // ─── IPC Handlers (typed, strict) ───
 
 ipcMain.handle(IPC.START, async () => {
@@ -335,7 +405,18 @@ ipcMain.handle(IPC.START, async () => {
     if (raw) mcpServers = raw.split('\n').filter(Boolean)
   } catch {}
 
-  return { version, auth, mcpServers, projectPath: process.cwd(), homePath: require('os').homedir() }
+  // Default working directory for new chats: a dedicated scratch folder so
+  // quick questions never touch a real project. Created on demand (self-healing).
+  const home = require('os').homedir()
+  let defaultDir = join(home, 'Documents', 'clod-scratch')
+  try {
+    mkdirSync(defaultDir, { recursive: true })
+  } catch (err: any) {
+    log(`Scratch dir creation failed — falling back to home: ${err.message}`)
+    defaultDir = home
+  }
+
+  return { version, auth, mcpServers, projectPath: process.cwd(), homePath: home, defaultDir }
 })
 
 ipcMain.handle(IPC.CREATE_TAB, () => {
@@ -414,6 +495,31 @@ ipcMain.on(IPC.SET_PERMISSION_MODE, (_event, mode: string) => {
   controlPlane.setPermissionMode(mode)
 })
 
+// Accessibility permission — required by the uiohook key hook for double-tap Option.
+ipcMain.handle(IPC.CHECK_ACCESSIBILITY, () => {
+  if (process.platform !== 'darwin') return true
+  try {
+    return systemPreferences.isTrustedAccessibilityClient(false)
+  } catch (err: any) {
+    log(`IPC CHECK_ACCESSIBILITY failed: ${err.message}`)
+    return false
+  }
+})
+
+ipcMain.handle(IPC.OPEN_ACCESSIBILITY_SETTINGS, async () => {
+  if (process.platform !== 'darwin') return false
+  try {
+    // Trigger the system prompt (adds the app to the list if not present)...
+    systemPreferences.isTrustedAccessibilityClient(true)
+    // ...and open the Accessibility pane directly.
+    await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility')
+    return true
+  } catch (err: any) {
+    log(`IPC OPEN_ACCESSIBILITY_SETTINGS failed: ${err.message}`)
+    return false
+  }
+})
+
 ipcMain.handle(IPC.RESPOND_PERMISSION, (_event, { tabId, questionId, optionId }: { tabId: string; questionId: string; optionId: string }) => {
   log(`IPC RESPOND_PERMISSION: tab=${tabId} question=${questionId} option=${optionId}`)
   return controlPlane.respondToPermission(tabId, questionId, optionId)
@@ -451,6 +557,13 @@ ipcMain.handle(IPC.LIST_SESSIONS, async (_e, projectPath?: string) => {
       const filePath = join(sessionsDir, file)
       const stat = statSync(filePath)
       if (stat.size < 100) continue // skip trivially small files
+
+      // Retention: delete sessions older than 3 days.
+      const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000
+      if (stat.mtimeMs < Date.now() - THREE_DAYS_MS) {
+        try { unlinkSync(filePath) } catch {}
+        continue
+      }
 
       // Read lines to extract metadata and validate transcript schema
       const meta: { validated: boolean; slug: string | null; firstMessage: string | null; lastTimestamp: string | null } = {
@@ -500,6 +613,36 @@ ipcMain.handle(IPC.LIST_SESSIONS, async (_e, projectPath?: string) => {
   } catch (err) {
     log(`LIST_SESSIONS error: ${err}`)
     return []
+  }
+})
+
+// Delete a session's JSONL file from disk
+ipcMain.handle(IPC.DELETE_SESSION, (_e, arg: { sessionId: string; projectPath?: string }) => {
+  const sessionId = arg?.sessionId
+  const projectPath = arg?.projectPath
+  log(`IPC DELETE_SESSION ${sessionId}${projectPath ? ` (path=${projectPath})` : ''}`)
+
+  // Validate sessionId — must be a strict UUID to prevent path traversal.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (!sessionId || !UUID_RE.test(sessionId)) {
+    log(`DELETE_SESSION: rejected invalid sessionId: ${sessionId}`)
+    return false
+  }
+
+  try {
+    const cwd = projectPath || process.cwd()
+    if (/[\0\r\n]/.test(cwd) || !cwd.startsWith('/')) {
+      log(`DELETE_SESSION: rejected invalid projectPath: ${cwd}`)
+      return false
+    }
+    const encodedPath = cwd.replace(/\//g, '-')
+    const filePath = join(homedir(), '.claude', 'projects', encodedPath, `${sessionId}.jsonl`)
+    if (!existsSync(filePath)) return false
+    unlinkSync(filePath)
+    return true
+  } catch (err) {
+    log(`DELETE_SESSION error: ${err}`)
+    return false
   }
 })
 
@@ -579,9 +722,9 @@ ipcMain.handle(IPC.SELECT_DIRECTORY, async () => {
   if (!mainWindow) return null
   // macOS: activate app so unparented dialog appears on top (not behind other apps).
   // Unparented avoids modal dimming on the transparent overlay.
-  // Activation is fine here — user is actively interacting with CLUI.
+  // Activation is fine here — user is actively interacting with CLOD.
   if (process.platform === 'darwin') app.focus()
-  const options = { properties: ['openDirectory'] as const }
+  const options: Electron.OpenDialogOptions = { properties: ['openDirectory'] }
   const result = process.platform === 'darwin'
     ? await dialog.showOpenDialog(options)
     : await dialog.showOpenDialog(mainWindow, options)
@@ -605,7 +748,7 @@ ipcMain.handle(IPC.ATTACH_FILES, async () => {
   if (!mainWindow) return null
   // macOS: activate app so unparented dialog appears on top
   if (process.platform === 'darwin') app.focus()
-  const options = {
+  const options: Electron.OpenDialogOptions = {
     properties: ['openFile', 'multiSelections'],
     filters: [
       { name: 'All Files', extensions: ['*'] },
@@ -660,28 +803,47 @@ ipcMain.handle(IPC.TAKE_SCREENSHOT, async () => {
 
   if (SPACES_DEBUG) snapshotWindowState('screenshot pre-hide')
   mainWindow.hide()
-  await new Promise((r) => setTimeout(r, 300))
+  await new Promise((r) => setTimeout(r, 250))
 
   try {
-    const { execSync } = require('child_process')
+    const { spawn } = require('child_process')
     const { join } = require('path')
     const { tmpdir } = require('os')
     const { readFileSync, existsSync } = require('fs')
 
     const timestamp = Date.now()
-    const screenshotPath = join(tmpdir(), `clui-screenshot-${timestamp}.png`)
+    const screenshotPath = join(tmpdir(), `clod-screenshot-${timestamp}.png`)
 
-    execSync(`/usr/sbin/screencapture -i "${screenshotPath}"`, {
-      timeout: 30000,
-      stdio: 'ignore',
+    // Run screencapture ASYNCHRONOUSLY (not execSync). execSync blocks Electron's
+    // main run loop for the whole interactive selection, and a stalled run loop can
+    // make macOS drop the crosshair's first mousedown — so only the second drag
+    // registered. Spawning keeps the run loop alive during selection.
+    await new Promise<void>((resolve) => {
+      const proc = spawn('/usr/sbin/screencapture', ['-i', screenshotPath], { stdio: 'ignore' })
+      const timer = setTimeout(() => { try { proc.kill() } catch {} resolve() }, 60000)
+      proc.on('close', () => { clearTimeout(timer); resolve() })
+      proc.on('error', () => { clearTimeout(timer); resolve() })
     })
 
     if (!existsSync(screenshotPath)) {
+      log('screenshot: no file written (cancelled or capture failed)')
       return null
     }
 
+    // Downscale large captures (macOS-native `sips`, no deps) so full-screen
+    // Retina grabs fit comfortably under the inline image size cap. `-Z` only
+    // shrinks (never upscales) and preserves aspect ratio. Runs async so it
+    // doesn't stall the main run loop; best-effort — on failure keep the original.
+    await new Promise<void>((resolve) => {
+      const sips = spawn('/usr/bin/sips', ['-Z', '1568', screenshotPath], { stdio: 'ignore' })
+      const timer = setTimeout(() => { try { sips.kill() } catch {} resolve() }, 5000)
+      sips.on('close', () => { clearTimeout(timer); resolve() })
+      sips.on('error', () => { clearTimeout(timer); resolve() })
+    })
+
     // Return structured attachment with data URL preview
     const buf = readFileSync(screenshotPath)
+    log(`screenshot: captured ${buf.length} bytes at ${screenshotPath}`)
     return {
       id: crypto.randomUUID(),
       type: 'image',
@@ -721,7 +883,7 @@ ipcMain.handle(IPC.PASTE_IMAGE, async (_event, dataUrl: string) => {
     const [, mimeType, ext, base64Data] = match
     const buf = Buffer.from(base64Data, 'base64')
     const timestamp = Date.now()
-    const filePath = join(tmpdir(), `clui-paste-${timestamp}.${ext}`)
+    const filePath = join(tmpdir(), `clod-paste-${timestamp}.${ext}`)
     writeFileSync(filePath, buf)
 
     return {
@@ -748,7 +910,7 @@ ipcMain.handle(IPC.TRANSCRIBE_AUDIO, async (_event, audioBase64: string) => {
   const phaseMs: Record<string, number> = {}
   const mark = (name: string, t0: number) => { phaseMs[name] = Date.now() - t0 }
 
-  const tmpWav = join(tmpdir(), `clui-voice-${Date.now()}.wav`)
+  const tmpWav = join(tmpdir(), `clod-voice-${Date.now()}.wav`)
   try {
     const runExecFile = (bin: string, args: string[], timeout: number): Promise<string> =>
       new Promise((resolve, reject) => {
@@ -1069,18 +1231,16 @@ nativeTheme.on('updated', () => {
 async function requestPermissions(): Promise<void> {
   if (process.platform !== 'darwin') return
 
-  // ── Microphone (for voice input via Whisper) ──
+  // ── Accessibility (required by the uiohook key hook for double-tap Option) ──
+  // Cmd+Shift+K is always the fallback if this is denied.
   try {
-    const micStatus = systemPreferences.getMediaAccessStatus('microphone')
-    if (micStatus === 'not-determined') {
-      await systemPreferences.askForMediaAccess('microphone')
+    if (process.platform === 'darwin' && !systemPreferences.isTrustedAccessibilityClient(false)) {
+      systemPreferences.isTrustedAccessibilityClient(true) // shows the system prompt
+      log('Permission preflight: Accessibility not yet granted — prompted user')
     }
   } catch (err: any) {
-    log(`Permission preflight: microphone check failed — ${err.message}`)
+    log(`Permission preflight: Accessibility check failed — ${err.message}`)
   }
-
-  // ── Accessibility (for global ⌥+Space shortcut) ──
-  // globalShortcut works without it on modern macOS; Cmd+Shift+K is always the fallback.
   // Screen Recording: not requested upfront — macOS 15 Sequoia shows an alarming
   // "bypass private window picker" dialog. Let the OS prompt naturally if/when
   // the screenshot feature is actually used.
@@ -1136,23 +1296,22 @@ app.whenReady().then(async () => {
   }
 
 
-  // Primary: Option+Space (2 keys, doesn't conflict with shell)
-  // Fallback: Cmd+Shift+K kept as secondary shortcut
-  const registered = globalShortcut.register('Alt+Space', () => toggleWindow('shortcut Alt+Space'))
-  if (!registered) {
-    log('Alt+Space shortcut registration failed — macOS input sources may claim it')
-  }
+  // Primary: double-tap Option (via global key hook — needs Accessibility permission).
+  // The hook always runs but only toggles when hotkeyMode is 'double-option', so
+  // switching modes at runtime needs no start/stop of the native hook.
+  // Fallback: Cmd+Shift+K always works even if Accessibility is denied.
+  registerOptionDoubleTap(() => { if (hotkeyMode === 'double-option') toggleWindow('double-tap Option') })
   globalShortcut.register('CommandOrControl+Shift+K', () => toggleWindow('shortcut Cmd/Ctrl+Shift+K'))
 
   const trayIconPath = join(__dirname, '../../resources/trayTemplate.png')
   const trayIcon = nativeImage.createFromPath(trayIconPath)
   trayIcon.setTemplateImage(true)
   tray = new Tray(trayIcon)
-  tray.setToolTip('Clui CC — Claude Code UI')
+  tray.setToolTip('Clod — Claude Code UI')
   tray.on('click', () => toggleWindow('tray click'))
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: 'Show Clui CC', click: () => showWindow('tray menu') },
+      { label: 'Show Clod', click: () => showWindow('tray menu') },
       { label: 'Quit', click: () => { app.quit() } },
     ])
   )
@@ -1165,6 +1324,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('will-quit', () => {
+  stopOptionDoubleTap()
   globalShortcut.unregisterAll()
   controlPlane.shutdown()
   flushLogs()

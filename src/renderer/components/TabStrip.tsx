@@ -1,10 +1,10 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, X } from '@phosphor-icons/react'
+import { Plus, X, Copy, Check, ArrowsOutLineHorizontal } from '@phosphor-icons/react'
 import { useSessionStore } from '../stores/sessionStore'
 import { HistoryPicker } from './HistoryPicker'
 import { SettingsPopover } from './SettingsPopover'
-import { useColors } from '../theme'
+import { useColors, useThemeStore } from '../theme'
 import type { TabStatus } from '../../shared/types'
 
 function StatusDot({ status, hasUnread, hasPermission }: { status: TabStatus; hasUnread: boolean; hasPermission: boolean }) {
@@ -36,19 +36,67 @@ function StatusDot({ status, hasUnread, hasPermission }: { status: TabStatus; ha
   )
 }
 
+/** Copies the active conversation (as plain "You:/Claude:" text) to the clipboard
+ *  so it can be pasted into the Claude app, with a brief tick confirmation. */
+function CopyConversationButton() {
+  const colors = useColors()
+  const [copied, setCopied] = useState(false)
+  const messages = useSessionStore((s) => s.tabs.find((t) => t.id === s.activeTabId)?.messages)
+
+  const transcript = (messages ?? [])
+    .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content.trim())
+    .map((m) => `${m.role === 'user' ? 'You' : 'Claude'}: ${m.content.trim()}`)
+    .join('\n\n')
+  const hasContent = transcript.length > 0
+
+  const handleCopy = () => {
+    if (!hasContent) return
+    try { window.clod.copyToClipboard(transcript) } catch {}
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      disabled={!hasContent}
+      className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full transition-colors"
+      style={{ color: copied ? colors.accent : colors.textTertiary, opacity: hasContent ? 1 : 0.4 }}
+      title="Copy conversation for Claude"
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        {copied ? (
+          <motion.span key="check" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} transition={{ duration: 0.15 }} className="flex">
+            <Check size={14} weight="bold" />
+          </motion.span>
+        ) : (
+          <motion.span key="copy" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.5, opacity: 0 }} transition={{ duration: 0.15 }} className="flex">
+            <Copy size={14} />
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </button>
+  )
+}
+
 export function TabStrip() {
   const tabs = useSessionStore((s) => s.tabs)
   const activeTabId = useSessionStore((s) => s.activeTabId)
   const selectTab = useSessionStore((s) => s.selectTab)
   const createTab = useSessionStore((s) => s.createTab)
   const closeTab = useSessionStore((s) => s.closeTab)
+  const isExpanded = useSessionStore((s) => s.isExpanded)
+  const expandedUI = useThemeStore((s) => s.expandedUI)
+  const setExpandedUI = useThemeStore((s) => s.setExpandedUI)
   const colors = useColors()
 
   return (
     <div
-      data-clui-ui
+      data-clod-ui
       className="flex items-center no-drag"
-      style={{ padding: '8px 0' }}
+      // Compact: extra bottom padding so the ~10px that tucks behind the input
+      // bar still leaves ~8px of visible grey below the pill — even with the top.
+      style={{ padding: isExpanded ? '8px 0' : '8px 0 18px' }}
     >
       {/* Scrollable tabs area — clipped by master card edge */}
       <div className="relative min-w-0 flex-1">
@@ -113,6 +161,18 @@ export function TabStrip() {
 
       {/* Pinned action buttons — always visible on the right */}
       <div className="flex items-center gap-0.5 flex-shrink-0 ml-1 pr-2">
+        <CopyConversationButton />
+
+        <button
+          onClick={() => setExpandedUI(!expandedUI)}
+          className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full transition-colors"
+          style={{ color: expandedUI ? colors.accent : colors.textTertiary }}
+          title={expandedUI ? 'Switch to narrow view' : 'Switch to wide view'}
+          aria-label="Toggle wide/narrow view"
+        >
+          <ArrowsOutLineHorizontal size={14} />
+        </button>
+
         <button
           onClick={() => createTab()}
           className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full transition-colors"

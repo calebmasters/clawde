@@ -6,7 +6,7 @@
  * to extract text, tool calls, and permission requests, then emits
  * normalized events identical to RunManager.
  *
- * This module is behind the `CLUI_INTERACTIVE_PERMISSIONS_PTY` feature flag.
+ * This module is behind the `CLOD_INTERACTIVE_PERMISSIONS_PTY` feature flag.
  *
  * Known limitations:
  * - Parsing depends on Claude CLI's terminal output format (Ink-based)
@@ -32,7 +32,7 @@ try {
   // Will be set when first needed — fail at startRun() time, not import time
 }
 
-const LOG_FILE = join(homedir(), '.clui-debug.log')
+const LOG_FILE = join(homedir(), '.clod-debug.log')
 const MAX_RING_LINES = 100
 const PTY_BUFFER_SIZE = 50 // rolling window of cleaned lines for parser context
 const PERMISSION_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
@@ -354,7 +354,7 @@ export class PtyRunManager extends EventEmitter {
 
     // Build args for interactive mode (no -p flag)
     const args: string[] = [
-      '--permission-mode', 'default',
+      '--permission-mode', options.permissionMode === 'auto' ? 'bypassPermissions' : 'default',
     ]
 
     if (options.sessionId) {
@@ -563,7 +563,9 @@ export class PtyRunManager extends EventEmitter {
     // ─── Permission phase: collecting detection context ───
     if (handle.permissionPhase === 'detecting' || handle.permissionPhase === 'idle') {
       this._checkPermissionInBuffer(requestId, handle, cleaned)
-      if (handle.permissionPhase === 'waiting_user') {
+      // _checkPermissionInBuffer may mutate permissionPhase; cast so TS doesn't
+      // narrow it out based on the branch condition above.
+      if ((handle.permissionPhase as string) === 'waiting_user') {
         return // Permission prompt detected and emitted
       }
     }

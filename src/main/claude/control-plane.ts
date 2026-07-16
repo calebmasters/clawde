@@ -605,6 +605,10 @@ export class ControlPlane extends EventEmitter {
       options = { ...options, hookSettingsPath }
     }
 
+    // Tell the run manager the current permission mode so 'auto' can bypass
+    // approvals at the CLI level (this transport has no interactive prompt).
+    options = { ...options, permissionMode: this.permissionMode }
+
     tab.activeRequestId = requestId
     if (!this.initRequestIds.has(requestId)) tab.promptCount++
     tab.lastActivityAt = Date.now()

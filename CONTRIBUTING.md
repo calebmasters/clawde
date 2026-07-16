@@ -1,6 +1,6 @@
-# Contributing to Clui CC
+# Contributing to Clod
 
-Thanks for your interest in contributing! Clui CC is a desktop overlay for Claude Code, and we welcome bug reports, feature ideas, and pull requests.
+Thanks for your interest in contributing! Clod is a desktop overlay for Claude Code, and we welcome bug reports, feature ideas, and pull requests.
 
 ## Getting Started
 
@@ -33,7 +33,7 @@ Thanks for your interest in contributing! Clui CC is a desktop overlay for Claud
 
 - **Main process** changes (`src/main/`) require a full restart (`Ctrl+C` then `npm run dev`).
 - **Renderer** changes (`src/renderer/`) hot-reload automatically.
-- Set `CLUI_DEBUG=1` to enable verbose main-process logging to `~/.clui-debug.log`.
+- Set `CLOD_DEBUG=1` to enable verbose main-process logging to `~/.clod-debug.log`.
 - The app creates a transparent, click-through window. Use `⌥ + Space` to toggle visibility (fallback: `Cmd+Shift+K`).
 
 ## Code Style

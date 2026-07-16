@@ -1,11 +1,31 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { DotsThree, Bell, ArrowsOutSimple, Moon } from '@phosphor-icons/react'
+import { DotsThree, Bell, ArrowsOutSimple, Moon, ShieldCheck, FolderOpen, Cpu, Warning, AlignBottom, Keyboard, Sparkle, TextAa, Power } from '@phosphor-icons/react'
 import { useThemeStore } from '../theme'
-import { useSessionStore } from '../stores/sessionStore'
+import { useSessionStore, AVAILABLE_MODELS } from '../stores/sessionStore'
 import { usePopoverLayer } from './PopoverLayer'
 import { useColors } from '../theme'
+
+/** Build an Electron accelerator string from a keydown event, or null if it's
+ *  just a modifier / has no modifier (globals need at least one modifier). */
+function toAccelerator(e: KeyboardEvent): string | null {
+  const key = e.key
+  if (key === 'Meta' || key === 'Control' || key === 'Alt' || key === 'Shift') return null
+  const mods: string[] = []
+  if (e.metaKey) mods.push('Command')
+  if (e.ctrlKey) mods.push('Control')
+  if (e.altKey) mods.push('Alt')
+  if (e.shiftKey) mods.push('Shift')
+  if (mods.length === 0) return null
+  const arrows: Record<string, string> = { ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right' }
+  let name: string
+  if (key === ' ') name = 'Space'
+  else if (arrows[key]) name = arrows[key]
+  else if (key.length === 1) name = key.toUpperCase()
+  else name = key // Enter, Tab, F1…F24, etc.
+  return [...mods, name].join('+')
+}
 
 function RowToggle({
   checked,
@@ -50,11 +70,64 @@ export function SettingsPopover() {
   const setThemeMode = useThemeStore((s) => s.setThemeMode)
   const expandedUI = useThemeStore((s) => s.expandedUI)
   const setExpandedUI = useThemeStore((s) => s.setExpandedUI)
+  const windowPosition = useThemeStore((s) => s.windowPosition)
+  const setWindowPosition = useThemeStore((s) => s.setWindowPosition)
+  const inputPlaceholder = useThemeStore((s) => s.inputPlaceholder)
+  const setInputPlaceholder = useThemeStore((s) => s.setInputPlaceholder)
+  const borderAnimation = useThemeStore((s) => s.borderAnimation)
+  const setBorderAnimation = useThemeStore((s) => s.setBorderAnimation)
+  const openAtLogin = useThemeStore((s) => s.openAtLogin)
+  const setOpenAtLogin = useThemeStore((s) => s.setOpenAtLogin)
+  const hotkeyMode = useThemeStore((s) => s.hotkeyMode)
+  const hotkeyAccelerator = useThemeStore((s) => s.hotkeyAccelerator)
+  const setHotkey = useThemeStore((s) => s.setHotkey)
+  const [recording, setRecording] = useState(false)
   const isExpanded = useSessionStore((s) => s.isExpanded)
+  const preferredModel = useSessionStore((s) => s.preferredModel)
+  const setPreferredModel = useSessionStore((s) => s.setPreferredModel)
+  const permissionMode = useSessionStore((s) => s.permissionMode)
+  const setPermissionMode = useSessionStore((s) => s.setPermissionMode)
+  const defaultDirOverride = useSessionStore((s) => s.defaultDirOverride)
+  const setDefaultDirOverride = useSessionStore((s) => s.setDefaultDirOverride)
+  const staticInfo = useSessionStore((s) => s.staticInfo)
   const popoverLayer = usePopoverLayer()
   const colors = useColors()
 
   const [open, setOpen] = useState(false)
+  const [accessibilityOk, setAccessibilityOk] = useState<boolean | null>(null)
+
+  const effectiveDefaultDir = defaultDirOverride || staticInfo?.defaultDir || staticInfo?.homePath || '~'
+  const defaultDirName = effectiveDefaultDir.replace(/\/$/, '').split('/').pop() || effectiveDefaultDir
+  const activeModelId = preferredModel || AVAILABLE_MODELS[0].id
+
+  // Re-check Accessibility permission each time the panel opens.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    window.clod.checkAccessibility().then((ok) => {
+      if (!cancelled) setAccessibilityOk(ok)
+    }).catch(() => { if (!cancelled) setAccessibilityOk(null) })
+    return () => { cancelled = true }
+  }, [open])
+
+  // While recording a custom shortcut, capture the next key combo.
+  useEffect(() => {
+    if (!recording) return
+    const handler = (e: KeyboardEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') { setRecording(false); return }
+      const accel = toAccelerator(e)
+      if (accel) { setHotkey('accelerator', accel); setRecording(false) }
+    }
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [recording, setHotkey])
+
+  const handleChooseFolder = useCallback(async () => {
+    const dir = await window.clod.selectDirectory()
+    if (dir) setDefaultDirOverride(dir)
+  }, [setDefaultDirOverride])
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ right: number; top?: number; bottom?: number; maxHeight?: number }>({ right: 0 })
@@ -78,11 +151,14 @@ export function SettingsPopover() {
       return
     }
 
-    // Same logic as HistoryPicker for collapsed mode: open upward from trigger.
+    // Collapsed: open upward from trigger. Cap height to the space above the
+    // trigger (so it never runs off the top of the screen) and to 440px so the
+    // panel stays compact; overflow scrolls.
+    const spaceAbove = rect.top - gap - margin
     setPos({
       bottom: window.innerHeight - rect.top + gap,
       right,
-      maxHeight: undefined,
+      maxHeight: Math.min(spaceAbove, 440),
     })
   }, [isExpanded])
 
@@ -140,7 +216,7 @@ export function SettingsPopover() {
       {popoverLayer && open && createPortal(
         <motion.div
           ref={popoverRef}
-          data-clui-ui
+          data-clod-ui
           initial={{ opacity: 0, y: isExpanded ? -4 : 4 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: isExpanded ? -4 : 4 }}
@@ -161,7 +237,30 @@ export function SettingsPopover() {
             ...(pos.maxHeight != null ? { maxHeight: pos.maxHeight, overflowY: 'auto' as const } : {}),
           }}
         >
-          <div className="p-3 flex flex-col gap-2.5">
+          <div className="p-3 flex flex-col gap-2" style={{ minHeight: 0 }}>
+            {/* Accessibility warning — only when the double-tap hook can't get events */}
+            {accessibilityOk === false && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => window.clod.openAccessibilitySettings()}
+                  className="flex items-start gap-2 rounded-lg p-2 text-left transition-colors"
+                  style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)' }}
+                >
+                  <Warning size={14} weight="fill" style={{ color: '#f59e0b', marginTop: 1, flexShrink: 0 }} />
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
+                      Double-tap needs Accessibility
+                    </div>
+                    <div className="text-[11px] mt-0.5" style={{ color: colors.textTertiary }}>
+                      Click to grant it. Cmd+Shift+K works meanwhile.
+                    </div>
+                  </div>
+                </button>
+                <div style={{ height: 1, background: colors.popoverBorder }} />
+              </>
+            )}
+
             {/* Full width */}
             <div>
               <div className="flex items-center justify-between gap-3">
@@ -178,6 +277,122 @@ export function SettingsPopover() {
                   }}
                   colors={colors}
                   label="Toggle full width panel"
+                />
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: colors.popoverBorder }} />
+
+            {/* Screen position */}
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlignBottom size={14} style={{ color: colors.textTertiary }} />
+                  <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
+                    Screen position
+                  </div>
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  {(['center', 'right'] as const).map((pos) => {
+                    const active = windowPosition === pos
+                    return (
+                      <button
+                        key={pos}
+                        type="button"
+                        onClick={() => setWindowPosition(pos)}
+                        className="rounded-md px-2 py-1 text-[11px] font-medium capitalize transition-colors"
+                        style={{
+                          background: active ? colors.accent : colors.surfaceSecondary,
+                          color: active ? '#fff' : colors.textSecondary,
+                          border: `1px solid ${active ? colors.accent : colors.containerBorder}`,
+                        }}
+                      >
+                        {pos}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: colors.popoverBorder }} />
+
+            {/* Shortcut */}
+            <div>
+              <div className="flex items-center gap-2 min-w-0 mb-1.5">
+                <Keyboard size={14} style={{ color: colors.textTertiary }} />
+                <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
+                  Shortcut
+                </div>
+              </div>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setHotkey('double-option', hotkeyAccelerator)}
+                  className="flex-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors"
+                  style={{
+                    background: hotkeyMode === 'double-option' ? colors.accent : colors.surfaceSecondary,
+                    color: hotkeyMode === 'double-option' ? '#fff' : colors.textSecondary,
+                    border: `1px solid ${hotkeyMode === 'double-option' ? colors.accent : colors.containerBorder}`,
+                  }}
+                >
+                  Double-tap ⌥
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRecording(true)}
+                  className="flex-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors truncate"
+                  style={{
+                    background: hotkeyMode === 'accelerator' ? colors.accent : colors.surfaceSecondary,
+                    color: hotkeyMode === 'accelerator' ? '#fff' : colors.textSecondary,
+                    border: `1px solid ${hotkeyMode === 'accelerator' ? colors.accent : colors.containerBorder}`,
+                  }}
+                  title="Click, then press a key combo"
+                >
+                  {recording ? 'Press keys…' : (hotkeyMode === 'accelerator' && hotkeyAccelerator ? hotkeyAccelerator : 'Custom…')}
+                </button>
+              </div>
+              <div className="text-[10px] mt-1" style={{ color: colors.textTertiary }}>
+                Cmd+Shift+K always works too.
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: colors.popoverBorder }} />
+
+            {/* Input prompt text */}
+            <div>
+              <div className="flex items-center gap-2 min-w-0 mb-1.5">
+                <TextAa size={14} style={{ color: colors.textTertiary }} />
+                <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
+                  Input prompt
+                </div>
+              </div>
+              <input
+                type="text"
+                value={inputPlaceholder}
+                onChange={(e) => setInputPlaceholder(e.target.value)}
+                placeholder="What do you want this time ..."
+                className="w-full rounded-md px-2 py-1 text-[11px]"
+                style={{ background: colors.surfaceSecondary, color: colors.textPrimary, border: `1px solid ${colors.containerBorder}`, outline: 'none' }}
+              />
+            </div>
+
+            <div style={{ height: 1, background: colors.popoverBorder }} />
+
+            {/* Input glow animation */}
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Sparkle size={14} style={{ color: colors.textTertiary }} />
+                  <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
+                    Input glow
+                  </div>
+                </div>
+                <RowToggle
+                  checked={borderAnimation}
+                  onChange={setBorderAnimation}
+                  colors={colors}
+                  label="Toggle input glow animation"
                 />
               </div>
             </div>
@@ -218,6 +433,124 @@ export function SettingsPopover() {
                   onChange={(next) => setThemeMode(next ? 'dark' : 'light')}
                   colors={colors}
                   label="Toggle dark theme"
+                />
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: colors.popoverBorder }} />
+
+            {/* Open at login */}
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Power size={14} style={{ color: colors.textTertiary }} />
+                  <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
+                    Open at login
+                  </div>
+                </div>
+                <RowToggle
+                  checked={openAtLogin}
+                  onChange={setOpenAtLogin}
+                  colors={colors}
+                  label="Toggle open at login"
+                />
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: colors.popoverBorder }} />
+
+            {/* Default model */}
+            <div>
+              <div className="flex items-center gap-2 min-w-0 mb-1.5">
+                <Cpu size={14} style={{ color: colors.textTertiary }} />
+                <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
+                  Default model
+                </div>
+              </div>
+              <div className="flex gap-1">
+                {AVAILABLE_MODELS.map((m) => {
+                  const active = m.id === activeModelId
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setPreferredModel(m.id)}
+                      className="flex-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors"
+                      style={{
+                        background: active ? colors.accent : colors.surfaceSecondary,
+                        color: active ? '#fff' : colors.textSecondary,
+                        border: `1px solid ${active ? colors.accent : colors.containerBorder}`,
+                      }}
+                      title={m.id}
+                    >
+                      {m.label.replace(/^Claude /, '')}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: colors.popoverBorder }} />
+
+            {/* Default folder */}
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FolderOpen size={14} style={{ color: colors.textTertiary }} />
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
+                      Default folder
+                    </div>
+                    <div className="text-[11px] truncate" style={{ color: colors.textTertiary }} title={effectiveDefaultDir}>
+                      {defaultDirName}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleChooseFolder}
+                    className="rounded-md px-2 py-1 text-[11px] font-medium transition-colors"
+                    style={{ background: colors.surfaceSecondary, color: colors.textSecondary, border: `1px solid ${colors.containerBorder}` }}
+                  >
+                    Change
+                  </button>
+                  {defaultDirOverride && (
+                    <button
+                      type="button"
+                      onClick={() => setDefaultDirOverride(null)}
+                      className="rounded-md px-2 py-1 text-[11px] font-medium transition-colors"
+                      style={{ background: 'transparent', color: colors.textTertiary, border: `1px solid ${colors.containerBorder}` }}
+                      title="Reset to the default scratch folder"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: colors.popoverBorder }} />
+
+            {/* Auto-approve tools (permission mode) */}
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <ShieldCheck size={14} style={{ color: permissionMode === 'auto' ? '#f59e0b' : colors.textTertiary }} />
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
+                      Auto-approve tools
+                    </div>
+                    <div className="text-[11px]" style={{ color: colors.textTertiary }}>
+                      {permissionMode === 'auto' ? 'Runs tools without asking' : 'Asks before each tool'}
+                    </div>
+                  </div>
+                </div>
+                <RowToggle
+                  checked={permissionMode === 'auto'}
+                  onChange={(next) => setPermissionMode(next ? 'auto' : 'ask')}
+                  colors={colors}
+                  label="Toggle auto-approve tools"
                 />
               </div>
             </div>

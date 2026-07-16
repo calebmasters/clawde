@@ -15,7 +15,7 @@ export function PermissionDeniedCard({ tools, sessionId, projectPath, onDismiss 
 
   const handleOpenInCli = () => {
     if (sessionId) {
-      window.clui.openInTerminal(sessionId, projectPath)
+      window.clod.openInTerminal(sessionId, projectPath)
     }
     onDismiss()
   }
