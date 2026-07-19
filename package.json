@@ -50,6 +50,7 @@
       "package.json"
     ],
     "mac": {
+      "identity": "Clod Code Signing",
       "icon": "resources/icon.icns",
       "entitlements": "resources/entitlements.mac.plist",
       "entitlementsInherit": "resources/entitlements.mac.plist",
