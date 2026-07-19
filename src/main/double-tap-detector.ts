@@ -1,6 +1,6 @@
 /**
  * Pure double-tap state machine — no OS/hook dependencies so it can be unit
- * tested with an injectable clock. `option-double-tap.ts` wires this to uiohook.
+ * tested with an injectable clock. `modifier-double-tap.ts` wires this to uiohook.
  *
  * A "tap" is a target key pressed and released quickly with no other key pressed
  * in between (chord detection). Two taps within the gap window fire onDoubleTap.

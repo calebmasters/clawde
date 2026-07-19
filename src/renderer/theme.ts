@@ -280,7 +280,7 @@ export type ColorPalette = { [K in keyof typeof darkColors]: string }
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type WindowPosition = 'center' | 'right'
-export type HotkeyMode = 'double-option' | 'accelerator'
+export type HotkeyMode = 'double-option' | 'double-command' | 'accelerator'
 
 export const DEFAULT_PLACEHOLDER = 'What do you want this time ...'
 
@@ -372,7 +372,10 @@ function loadSettings(): PersistedSettings {
         windowPosition: p.windowPosition === 'right' ? 'right' : 'center',
         inputPlaceholder: typeof p.inputPlaceholder === 'string' ? p.inputPlaceholder : DEFAULT_PLACEHOLDER,
         borderAnimation: typeof p.borderAnimation === 'boolean' ? p.borderAnimation : true,
-        hotkeyMode: p.hotkeyMode === 'accelerator' ? 'accelerator' : 'double-option',
+        hotkeyMode:
+          p.hotkeyMode === 'accelerator' || p.hotkeyMode === 'double-command'
+            ? p.hotkeyMode
+            : 'double-option',
         hotkeyAccelerator: typeof p.hotkeyAccelerator === 'string' ? p.hotkeyAccelerator : '',
         openAtLogin: typeof p.openAtLogin === 'boolean' ? p.openAtLogin : true,
       }

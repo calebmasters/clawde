@@ -32,7 +32,7 @@ export interface ClodAPI {
   installPlugin(repo: string, pluginName: string, marketplace: string, sourcePath?: string, isSkillMd?: boolean): Promise<{ ok: boolean; error?: string }>
   uninstallPlugin(pluginName: string): Promise<{ ok: boolean; error?: string }>
   setPermissionMode(mode: string): void
-  setHotkey(mode: 'double-option' | 'accelerator', accelerator: string): void
+  setHotkey(mode: 'double-option' | 'double-command' | 'accelerator', accelerator: string): void
   copyToClipboard(text: string): void
   setOpenAtLogin(enabled: boolean): void
   checkAccessibility(): Promise<boolean>

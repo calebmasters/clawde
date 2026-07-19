@@ -10,7 +10,7 @@ import { log as _log, LOG_FILE, flushLogs } from './logger'
 import { getCliEnv } from './cli-env'
 import { IPC } from '../shared/types'
 import type { RunOptions, NormalizedEvent, EnrichedError } from '../shared/types'
-import { registerOptionDoubleTap, stopOptionDoubleTap } from './option-double-tap'
+import { registerModifierDoubleTap, stopModifierDoubleTap } from './modifier-double-tap'
 
 const DEBUG_MODE = process.env.CLOD_DEBUG === '1'
 const SPACES_DEBUG = DEBUG_MODE || process.env.CLOD_SPACES_DEBUG === '1'
@@ -76,9 +76,10 @@ const PILL_BOTTOM_MARGIN = 24
 type WindowPosition = 'center' | 'right'
 let windowPosition: WindowPosition = 'center'
 
-// Overlay toggle hotkey. 'double-option' = double-tap Option (default, via uiohook).
-// 'accelerator' = a custom Electron global shortcut. Cmd+Shift+K is always a fallback.
-type HotkeyMode = 'double-option' | 'accelerator'
+// Overlay toggle hotkey. 'double-option' / 'double-command' = double-tap that modifier
+// (default Option, via uiohook). 'accelerator' = a custom Electron global shortcut.
+// Cmd+Shift+K is always a fallback.
+type HotkeyMode = 'double-option' | 'double-command' | 'accelerator'
 let hotkeyMode: HotkeyMode = 'double-option'
 let registeredAccelerator: string | null = null
 
@@ -364,7 +365,8 @@ function configureHotkey(mode: HotkeyMode, accelerator: string): void {
 }
 
 ipcMain.on(IPC.SET_HOTKEY, (_event, mode: string, accelerator: string) => {
-  const m: HotkeyMode = mode === 'accelerator' ? 'accelerator' : 'double-option'
+  const m: HotkeyMode =
+    mode === 'accelerator' || mode === 'double-command' ? mode : 'double-option'
   log(`IPC SET_HOTKEY: mode=${m} accel=${accelerator || '(none)'}`)
   configureHotkey(m, typeof accelerator === 'string' ? accelerator : '')
 })
@@ -1296,11 +1298,14 @@ app.whenReady().then(async () => {
   }
 
 
-  // Primary: double-tap Option (via global key hook — needs Accessibility permission).
-  // The hook always runs but only toggles when hotkeyMode is 'double-option', so
-  // switching modes at runtime needs no start/stop of the native hook.
+  // Primary: double-tap Option or Command (via global key hook — needs Accessibility
+  // permission). The hook watches both modifiers but only toggles for the one matching
+  // hotkeyMode, so switching modes at runtime needs no start/stop of the native hook.
   // Fallback: Cmd+Shift+K always works even if Accessibility is denied.
-  registerOptionDoubleTap(() => { if (hotkeyMode === 'double-option') toggleWindow('double-tap Option') })
+  registerModifierDoubleTap((mod) => {
+    if (mod === 'option' && hotkeyMode === 'double-option') toggleWindow('double-tap Option')
+    if (mod === 'command' && hotkeyMode === 'double-command') toggleWindow('double-tap Command')
+  })
   globalShortcut.register('CommandOrControl+Shift+K', () => toggleWindow('shortcut Cmd/Ctrl+Shift+K'))
 
   const trayIconPath = join(__dirname, '../../resources/trayTemplate.png')
@@ -1324,7 +1329,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('will-quit', () => {
-  stopOptionDoubleTap()
+  stopModifierDoubleTap()
   globalShortcut.unregisterAll()
   controlPlane.shutdown()
   flushLogs()

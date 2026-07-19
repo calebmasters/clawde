@@ -335,8 +335,22 @@ export function SettingsPopover() {
                     color: hotkeyMode === 'double-option' ? '#fff' : colors.textSecondary,
                     border: `1px solid ${hotkeyMode === 'double-option' ? colors.accent : colors.containerBorder}`,
                   }}
+                  title="Double-tap Option to toggle"
                 >
-                  Double-tap ⌥
+                  Double ⌥
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHotkey('double-command', hotkeyAccelerator)}
+                  className="flex-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors"
+                  style={{
+                    background: hotkeyMode === 'double-command' ? colors.accent : colors.surfaceSecondary,
+                    color: hotkeyMode === 'double-command' ? '#fff' : colors.textSecondary,
+                    border: `1px solid ${hotkeyMode === 'double-command' ? colors.accent : colors.containerBorder}`,
+                  }}
+                  title="Double-tap Command to toggle"
+                >
+                  Double ⌘
                 </button>
                 <button
                   type="button"
