@@ -252,8 +252,12 @@ function showWindow(source = 'unknown'): void {
     log(`[spaces] showWindow#${toggleId} source=${source} preserve-bounds=(${b.x},${b.y},${b.width}x${b.height})`)
     snapshotWindowState(`showWindow#${toggleId} pre-show`)
   }
-  // As an accessory app (app.dock.hide), show() + focus gives keyboard
-  // without deactivating the active app — hover preserved everywhere.
+  // Show without activating the app. As an accessory app (app.dock.hide) with an
+  // NSPanel, the window can become key — and so receive keyboard — while the app
+  // the user was in stays active. Deliberately no webContents.focus() here: that
+  // triggers applicationDidBecomeActive, which deactivates the previous app and
+  // makes tiling window managers re-layout. The renderer focuses the textarea
+  // itself on WINDOW_SHOWN, so DOM focus does not depend on this.
   mainWindow.show()
   if (lastWindowBounds) {
     // Re-clamp on every show: the display layout may have changed while hidden
@@ -261,7 +265,6 @@ function showWindow(source = 'unknown'): void {
     lastWindowBounds = clampToDisplay(lastWindowBounds)
     mainWindow.setBounds(lastWindowBounds)
   }
-  mainWindow.webContents.focus()
   broadcast(IPC.WINDOW_SHOWN)
   if (SPACES_DEBUG) scheduleToggleSnapshots(toggleId, 'show')
 }
@@ -283,6 +286,15 @@ function resetWindowPosition(): void {
   lastWindowBounds = mainWindow.getBounds()
 }
 
+/**
+ * Hide the overlay. Nothing to restore: showWindow never activates this app, so
+ * whatever the user was in kept its focus the whole time.
+ */
+function hideWindow(): void {
+  if (!mainWindow) return
+  mainWindow.hide()
+}
+
 function toggleWindow(source = 'unknown'): void {
   if (!mainWindow) return
   const toggleId = ++toggleSequence
@@ -292,7 +304,7 @@ function toggleWindow(source = 'unknown'): void {
   }
 
   if (mainWindow.isVisible()) {
-    mainWindow.hide()
+    hideWindow()
     if (SPACES_DEBUG) scheduleToggleSnapshots(toggleId, 'hide')
   } else {
     showWindow(source)
@@ -316,7 +328,7 @@ ipcMain.handle(IPC.ANIMATE_HEIGHT, () => {
 })
 
 ipcMain.on(IPC.HIDE_WINDOW, () => {
-  mainWindow?.hide()
+  hideWindow()
 })
 
 ipcMain.handle(IPC.IS_VISIBLE, () => {
@@ -881,8 +893,9 @@ ipcMain.handle(IPC.TAKE_SCREENSHOT, async () => {
     return null
   } finally {
     if (mainWindow) {
+      // No webContents.focus() — see showWindow(): activating the app disturbs
+      // tiling window managers. The renderer refocuses the textarea itself.
       mainWindow.show()
-      mainWindow.webContents.focus()
     }
     broadcast(IPC.WINDOW_SHOWN)
     if (SPACES_DEBUG) {
