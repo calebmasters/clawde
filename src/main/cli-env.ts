@@ -1,4 +1,5 @@
 import { execSync } from 'child_process'
+import { markedCommand, extractMarked, isPlausiblePath } from './shell-capture'
 
 let cachedPath: string | null = null
 
@@ -6,7 +7,9 @@ function appendPathEntries(target: string[], seen: Set<string>, rawPath: string 
   if (!rawPath) return
   for (const entry of rawPath.split(':')) {
     const p = entry.trim()
-    if (!p || seen.has(p)) continue
+    // Drop anything that isn't a usable absolute directory — shell rc banners can
+    // otherwise inject ANSI escape sequences as bogus PATH entries.
+    if (!p || seen.has(p) || !isPlausiblePath(p)) continue
     seen.add(p)
     target.push(p)
   }
@@ -25,16 +28,19 @@ export function getCliPath(): string {
   appendPathEntries(ordered, seen, '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin')
 
   // Try interactive login shell first so nvm/asdf/etc. PATH hooks are loaded.
+  // The value is marker-fenced because interactive rc files often print banners.
+  const capture = markedCommand('$PATH')
   const pathCommands = [
-    '/bin/zsh -ilc "echo $PATH"',
-    '/bin/zsh -lc "echo $PATH"',
-    '/bin/bash -lc "echo $PATH"',
+    `/bin/zsh -ilc '${capture}'`,
+    `/bin/zsh -lc '${capture}'`,
+    `/bin/bash -lc '${capture}'`,
   ]
 
   for (const cmd of pathCommands) {
     try {
-      const discovered = execSync(cmd, { encoding: 'utf-8', timeout: 3000 }).trim()
-      appendPathEntries(ordered, seen, discovered)
+      const raw = execSync(cmd, { encoding: 'utf-8', timeout: 3000 })
+      const discovered = extractMarked(raw)
+      if (discovered) appendPathEntries(ordered, seen, discovered)
     } catch {
       // Keep trying fallbacks.
     }

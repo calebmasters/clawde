@@ -7,6 +7,7 @@ import { normalize } from './event-normalizer'
 import { buildUserContent } from './message-content'
 import { log as _log } from '../logger'
 import { getCliEnv } from '../cli-env'
+import { markedCommand, extractMarked, isPlausiblePath } from '../shell-capture'
 import type { ClaudeEvent, NormalizedEvent, RunOptions, EnrichedError } from '../../shared/types'
 
 const MAX_RING_LINES = 100
@@ -115,13 +116,21 @@ export class RunManager extends EventEmitter {
       } catch {}
     }
 
-    try {
-      return execSync('/bin/zsh -ilc "whence -p claude"', { encoding: 'utf-8', env: getCliEnv() }).trim()
-    } catch {}
+    // Fenced with markers: interactive rc files often print banners, and taking
+    // raw stdout as the path yields a multi-KB blob that fails spawn with
+    // ENAMETOOLONG. Validate the result before trusting it as a binary path.
+    const shellLookups = [
+      `/bin/zsh -ilc '${markedCommand('$(whence -p claude)')}'`,
+      `/bin/bash -lc '${markedCommand('$(which claude)')}'`,
+    ]
 
-    try {
-      return execSync('/bin/bash -lc "which claude"', { encoding: 'utf-8', env: getCliEnv() }).trim()
-    } catch {}
+    for (const cmd of shellLookups) {
+      try {
+        const raw = execSync(cmd, { encoding: 'utf-8', env: getCliEnv() })
+        const found = extractMarked(raw)
+        if (found && isPlausiblePath(found)) return found
+      } catch {}
+    }
 
     return 'claude'
   }
