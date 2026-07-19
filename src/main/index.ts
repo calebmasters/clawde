@@ -11,6 +11,7 @@ import { getCliEnv } from './cli-env'
 import { IPC } from '../shared/types'
 import type { RunOptions, NormalizedEvent, EnrichedError } from '../shared/types'
 import { registerModifierDoubleTap, stopModifierDoubleTap } from './modifier-double-tap'
+import { clampRectToArea } from './window-bounds'
 
 const DEBUG_MODE = process.env.CLOD_DEBUG === '1'
 const SPACES_DEBUG = DEBUG_MODE || process.env.CLOD_SPACES_DEBUG === '1'
@@ -82,6 +83,16 @@ let windowPosition: WindowPosition = 'center'
 type HotkeyMode = 'double-option' | 'double-command' | 'accelerator'
 let hotkeyMode: HotkeyMode = 'double-option'
 let registeredAccelerator: string | null = null
+
+/**
+ * Keep the overlay inside the work area of whichever display it sits on.
+ * The window is frameless and click-through, so once it is dragged off-screen
+ * there is nothing left to grab — it stays invisible across hide/show cycles.
+ */
+function clampToDisplay(bounds: Electron.Rectangle): Electron.Rectangle {
+  const display = screen.getDisplayMatching(bounds)
+  return clampRectToArea(bounds, display.workArea)
+}
 
 /** X coordinate for the window given the current position preference. */
 function computeWindowX(dx: number, sw: number): number {
@@ -225,6 +236,9 @@ function showWindow(source = 'unknown'): void {
   const toggleId = ++toggleSequence
 
   if (lastWindowBounds) {
+    // Re-clamp on every show: the display layout may have changed while hidden
+    // (external monitor unplugged), leaving the saved bounds off-screen.
+    lastWindowBounds = clampToDisplay(lastWindowBounds)
     mainWindow.setBounds(lastWindowBounds)
   }
 
@@ -242,6 +256,9 @@ function showWindow(source = 'unknown'): void {
   // without deactivating the active app — hover preserved everywhere.
   mainWindow.show()
   if (lastWindowBounds) {
+    // Re-clamp on every show: the display layout may have changed while hidden
+    // (external monitor unplugged), leaving the saved bounds off-screen.
+    lastWindowBounds = clampToDisplay(lastWindowBounds)
     mainWindow.setBounds(lastWindowBounds)
   }
   mainWindow.webContents.focus()
@@ -319,10 +336,15 @@ ipcMain.on(IPC.SET_IGNORE_MOUSE_EVENTS, (event, ignore: boolean, options?: { for
 ipcMain.on(IPC.START_WINDOW_DRAG, (event, deltaX: number, deltaY: number) => {
   const win = BrowserWindow.fromWebContents(event.sender)
   if (win && !win.isDestroyed()) {
-    const [x, y] = win.getPosition()
+    const bounds = win.getBounds()
     // Vertical is handled in two phases in the renderer: window first (until macOS clamps),
     // then CSS translateY within the window — so deltaY here is always within allowed range
-    win.setPosition(Math.round(x + deltaX), Math.round(y + deltaY))
+    const moved = clampToDisplay({
+      ...bounds,
+      x: Math.round(bounds.x + deltaX),
+      y: Math.round(bounds.y + deltaY),
+    })
+    win.setPosition(moved.x, moved.y)
     lastWindowBounds = win.getBounds()
   }
 })
