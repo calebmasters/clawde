@@ -158,6 +158,32 @@ controlPlane.on('error', (tabId: string, error: EnrichedError) => {
 
 // ─── Window Creation ───
 
+/**
+ * Report the overlay to the Accessibility API as "AXSystemDialog" — the same
+ * subrole Raycast/Spotlight-style panels use. Tiling window managers
+ * (AeroSpace, yabai) classify such windows as transient popups and ignore
+ * them. With Electron's default "AXStandardWindow" subrole, AeroSpace binds
+ * the overlay into its workspace tree: every show rebuilds the layout
+ * (rearranging the accordion) and every hide force-focuses another window.
+ * Verified against AeroSpace's window heuristics; see
+ * docs/AEROSPACE-OVERLAY-ISSUE.md.
+ */
+function applyOverlayAxIdentity(win: BrowserWindow): void {
+  if (process.platform !== 'darwin') return
+  const addonPath = join(__dirname, '../../resources/native/clod_mac_ax.node')
+  try {
+    const native = require(addonPath) as {
+      setWindowSubrole: (handle: Buffer, subrole: string) => boolean
+    }
+    const applied = native.setWindowSubrole(win.getNativeWindowHandle(), 'AXSystemDialog')
+    log(`[ax] overlay subrole AXSystemDialog applied=${applied}`)
+  } catch (err) {
+    // Non-fatal: without the addon the overlay still works, but tiling window
+    // managers will manage it as a normal window again.
+    log(`[ax] native addon unavailable (${addonPath}): ${String(err)}`)
+  }
+}
+
 function createWindow(): void {
   const cursor = screen.getCursorScreenPoint()
   const display = screen.getDisplayNearestPoint(cursor)
@@ -172,7 +198,22 @@ function createWindow(): void {
     height: PILL_HEIGHT,
     x,
     y,
-    ...(process.platform === 'darwin' ? { type: 'panel' as const } : {}),  // NSPanel — non-activating, joins all spaces
+    ...(process.platform === 'darwin'
+      ? {
+          type: 'panel' as const, // non-activating, joins all spaces
+          // Keep the borderless style mask. The default (roundedCorners: true)
+          // gives frameless windows a hidden titled frame whose traffic-light
+          // buttons are still exposed through the Accessibility API, making
+          // tiling window managers treat the overlay as a standard manageable
+          // window. Visually inert: the pill is drawn entirely in CSS on a
+          // transparent window. See docs/AEROSPACE-OVERLAY-ISSUE.md.
+          roundedCorners: false,
+          minimizable: false,
+          maximizable: false,
+          closable: false,
+          fullscreenable: false,
+        }
+      : {}),
     frame: false,
     transparent: true,
     resizable: false,
@@ -199,6 +240,7 @@ function createWindow(): void {
   // but explicit flags ensure correct behavior on older Electron builds.
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   mainWindow.setAlwaysOnTop(true, 'screen-saver')
+  applyOverlayAxIdentity(mainWindow)
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   mainWindow.webContents.on('will-navigate', (event) => {
     event.preventDefault()

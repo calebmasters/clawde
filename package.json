@@ -19,9 +19,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "electron-vite preview",
-    "dist": "electron-vite build --mode production && electron-builder --mac --dir",
+    "dist": "bash scripts/build-native.sh && electron-vite build --mode production && electron-builder --mac --dir",
+    "build:native": "bash scripts/build-native.sh",
     "doctor": "bash scripts/doctor.sh",
-    "postinstall": "electron-builder install-app-deps && bash scripts/patch-dev-icon.sh"
+    "postinstall": "electron-builder install-app-deps && bash scripts/patch-dev-icon.sh && bash scripts/build-native.sh"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
@@ -49,13 +50,17 @@
       "resources/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "resources/native/**"
+    ],
     "mac": {
       "identity": "Clod Code Signing",
       "icon": "resources/icon.icns",
       "entitlements": "resources/entitlements.mac.plist",
       "entitlementsInherit": "resources/entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Clod uses your microphone to transcribe voice input locally with Whisper."
+        "NSMicrophoneUsageDescription": "Clod uses your microphone to transcribe voice input locally with Whisper.",
+        "LSUIElement": true
       }
     }
   },
@@ -68,6 +73,8 @@
     "electron": "^35.7.5",
     "electron-builder": "^26.8.1",
     "electron-vite": "^3.0.0",
+    "node-addon-api": "^8.3.0",
+    "node-gyp": "^11.2.0",
     "postcss": "^8.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

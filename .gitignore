@@ -4,6 +4,7 @@ dist/
 out/
 build/
 release/
+resources/native/
 *.tsbuildinfo
 
 # OS artifacts

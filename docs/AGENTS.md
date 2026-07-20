@@ -99,6 +99,7 @@ All IPC and event types live in `src/shared/types.ts`. Key types:
 
 ### Don't
 
+- Don't remove `applyOverlayAxIdentity()`, the `native/mac-ax` addon, `roundedCorners: false`, or `LSUIElement` — together they keep tiling window managers (AeroSpace/yabai) from managing the overlay. See `docs/AEROSPACE-OVERLAY-ISSUE.md`
 - Don't import main-process modules from renderer (or vice versa) — the preload bridge is the only crossing point
 - Don't add network calls — the app is designed to be nearly offline (only marketplace fetches from GitHub)
 - Don't use `node-pty` for new features — it's legacy, prefer `RunManager` (stdio-based)
