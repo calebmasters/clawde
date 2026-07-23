@@ -314,6 +314,27 @@ export interface Project {
   lastUsedAt: number
 }
 
+// ─── Presets (modes) ───
+
+export type PresetKeybind =
+  | { kind: 'double-tap'; modifier: 'option' | 'command' }
+  | { kind: 'accelerator'; accelerator: string }
+  | { kind: 'none' }
+
+/** A named launch mode: keybind + optional project/model/permission/UI defaults. */
+export interface Preset {
+  id: string
+  name: string
+  keybind: PresetKeybind
+  /** undefined = keep current project on activation; null = Scratch; string = project id */
+  projectId?: string | null
+  model?: string
+  permissionMode?: 'ask' | 'auto'
+  startExpanded?: boolean
+}
+
+export type PresetInput = Omit<Preset, 'id'>
+
 // ─── Marketplace / Plugin Types ───
 
 export type PluginStatus = 'not_installed' | 'checking' | 'installing' | 'installed' | 'failed'
@@ -367,6 +388,15 @@ export const IPC = {
   PROJECTS_CREATE: 'clod:projects-create',
   PROJECTS_UPDATE: 'clod:projects-update',
   PROJECTS_DELETE: 'clod:projects-delete',
+
+  // Presets (modes)
+  PRESETS_LIST: 'clod:presets-list',
+  PRESETS_CREATE: 'clod:presets-create',
+  PRESETS_UPDATE: 'clod:presets-update',
+  PRESETS_DELETE: 'clod:presets-delete',
+  SET_ACTIVE_PRESET: 'clod:set-active-preset',
+  // main → renderer: a preset keybind fired
+  PRESET_ACTIVATED: 'clod:preset-activated',
 
   // One-way events (main → renderer)
   TEXT_CHUNK: 'clod:text-chunk',
