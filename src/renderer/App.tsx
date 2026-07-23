@@ -33,6 +33,7 @@ export default function App() {
     try { window.clod.setWindowPosition(t.windowPosition) } catch {}
     try { window.clod.setHotkey(t.hotkeyMode, t.hotkeyAccelerator) } catch {}
     try { window.clod.setOpenAtLogin(t.openAtLogin) } catch {}
+    try { window.clod.setTerminal(t.preferredTerminal) } catch {}
   }, [])
 
   // Position the overlay window: horizontal anchor (center/right) + a small,

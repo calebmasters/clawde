@@ -12,6 +12,7 @@ import { IPC } from '../shared/types'
 import type { RunOptions, NormalizedEvent, EnrichedError } from '../shared/types'
 import { registerModifierDoubleTap, stopModifierDoubleTap } from './modifier-double-tap'
 import { clampRectToArea } from './window-bounds'
+import { launchInTerminal, detectInstalled, isTerminalId, TERMINALS } from './terminal-launcher'
 
 const DEBUG_MODE = process.env.CLOD_DEBUG === '1'
 const SPACES_DEBUG = DEBUG_MODE || process.env.CLOD_SPACES_DEBUG === '1'
@@ -83,6 +84,10 @@ let windowPosition: WindowPosition = 'center'
 type HotkeyMode = 'double-option' | 'double-command' | 'accelerator'
 let hotkeyMode: HotkeyMode = 'double-option'
 let registeredAccelerator: string | null = null
+
+// Preferred terminal for "Open in CLI" ('auto' = detect). Renderer pushes the
+// persisted value on launch, same pattern as SET_HOTKEY.
+let preferredTerminal = 'auto'
 
 /**
  * Keep the overlay inside the work area of whichever display it sits on.
@@ -445,6 +450,20 @@ ipcMain.on(IPC.SET_HOTKEY, (_event, mode: string, accelerator: string) => {
     mode === 'accelerator' || mode === 'double-command' ? mode : 'double-option'
   log(`IPC SET_HOTKEY: mode=${m} accel=${accelerator || '(none)'}`)
   configureHotkey(m, typeof accelerator === 'string' ? accelerator : '')
+})
+
+ipcMain.on(IPC.SET_TERMINAL, (_event, id: string) => {
+  if (id === 'auto' || isTerminalId(id)) {
+    preferredTerminal = id
+    log(`IPC SET_TERMINAL: ${id}`)
+  } else {
+    log(`IPC SET_TERMINAL: invalid "${id}" — ignoring`)
+  }
+})
+
+ipcMain.handle(IPC.LIST_TERMINALS, () => {
+  const installed = new Set(detectInstalled())
+  return TERMINALS.filter((t) => installed.has(t.id)).map((t) => ({ id: t.id, name: t.name }))
 })
 
 ipcMain.on(IPC.COPY_TO_CLIPBOARD, (_event, text: string) => {
@@ -1210,8 +1229,7 @@ ipcMain.handle(IPC.GET_DIAGNOSTICS, () => {
   }
 })
 
-ipcMain.handle(IPC.OPEN_IN_TERMINAL, (_event, arg: string | null | { sessionId?: string | null; projectPath?: string }) => {
-  const { execFile } = require('child_process')
+ipcMain.handle(IPC.OPEN_IN_TERMINAL, async (_event, arg: string | null | { sessionId?: string | null; projectPath?: string }) => {
   const claudeBin = 'claude'
 
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -1238,37 +1256,10 @@ ipcMain.handle(IPC.OPEN_IN_TERMINAL, (_event, arg: string | null | { sessionId?:
     return false
   }
 
-  // Shell-safe single-quote escaping: replace ' with '\'' (end quote, escaped literal quote, reopen quote)
-  // Single quotes block all shell expansion ($, `, \, etc.) — unlike double quotes which allow $() and backticks
-  const shellSingleQuote = (s: string): string => "'" + s.replace(/'/g, "'\\''") + "'"
-  // AppleScript string escaping: backslashes doubled, double quotes escaped
-  const escapeAppleScript = (s: string): string => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-
-  const safeDir = escapeAppleScript(shellSingleQuote(projectPath))
-
-  let cmd: string
-  if (sessionId) {
-    // sessionId is UUID-validated above, safe to embed directly
-    cmd = `cd ${safeDir} && ${claudeBin} --resume ${sessionId}`
-  } else {
-    cmd = `cd ${safeDir} && ${claudeBin}`
-  }
-
-  const script = `tell application "Terminal"
-  activate
-  do script "${cmd}"
-end tell`
-
-  try {
-    execFile('/usr/bin/osascript', ['-e', script], (err: Error | null) => {
-      if (err) log(`Failed to open terminal: ${err.message}`)
-      else log(`Opened terminal with: ${cmd}`)
-    })
-    return true
-  } catch (err: unknown) {
-    log(`Failed to open terminal: ${err}`)
-    return false
-  }
+  const command = sessionId ? [claudeBin, '--resume', sessionId] : [claudeBin]
+  const result = await launchInTerminal({ preferred: preferredTerminal, cwd: projectPath, command })
+  if (!result.ok) log(`OPEN_IN_TERMINAL: all launch attempts failed`)
+  return result.ok
 })
 
 // ─── Marketplace IPC ───

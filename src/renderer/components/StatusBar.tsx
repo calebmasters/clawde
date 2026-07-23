@@ -274,6 +274,7 @@ export function StatusBar() {
   )
   const addDirectory = useSessionStore((s) => s.addDirectory)
   const removeDirectory = useSessionStore((s) => s.removeDirectory)
+  const addSystemMessage = useSessionStore((s) => s.addSystemMessage)
   const popoverLayer = usePopoverLayer()
   const colors = useColors()
 
@@ -301,8 +302,11 @@ export function StatusBar() {
   const isEmpty = tab.messages.length === 0
   const hasExtraDirs = tab.additionalDirs.length > 0
 
-  const handleOpenInTerminal = () => {
-    window.clod.openInTerminal(tab.claudeSessionId, tab.workingDirectory)
+  const handleOpenInTerminal = async () => {
+    const ok = await window.clod.openInTerminal(tab.claudeSessionId, tab.workingDirectory).catch(() => false)
+    if (!ok) {
+      addSystemMessage('Could not open a terminal — check Settings → "Open CLI in".')
+    }
   }
 
   const handleDirClick = () => {

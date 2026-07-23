@@ -384,6 +384,10 @@ export const IPC = {
   // Overlay toggle hotkey (double-tap Option or a custom accelerator)
   SET_HOTKEY: 'clod:set-hotkey',
 
+  // Preferred terminal app for "Open in CLI" ('auto' = detect)
+  SET_TERMINAL: 'clod:set-terminal',
+  LIST_TERMINALS: 'clod:list-terminals',
+
   // Write text to the system clipboard
   COPY_TO_CLIPBOARD: 'clod:copy-to-clipboard',
 

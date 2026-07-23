@@ -302,6 +302,8 @@ interface ThemeState {
   openAtLogin: boolean
   /** Whether the chat card starts expanded when the app launches */
   startExpanded: boolean
+  /** Preferred terminal app for "Open in CLI" ('auto' = detect, or a TerminalId) */
+  preferredTerminal: string
   /** OS-reported dark mode — used when themeMode is 'system' */
   _systemIsDark: boolean
   setIsDark: (isDark: boolean) => void
@@ -314,6 +316,7 @@ interface ThemeState {
   setHotkey: (mode: HotkeyMode, accelerator: string) => void
   setOpenAtLogin: (on: boolean) => void
   setStartExpanded: (on: boolean) => void
+  setPreferredTerminal: (id: string) => void
   /** Called by OS theme change listener — updates system value */
   setSystemTheme: (isDark: boolean) => void
 }
@@ -350,6 +353,7 @@ interface PersistedSettings {
   hotkeyAccelerator: string
   openAtLogin: boolean
   startExpanded: boolean
+  preferredTerminal: string
 }
 
 const DEFAULT_SETTINGS: PersistedSettings = {
@@ -363,6 +367,7 @@ const DEFAULT_SETTINGS: PersistedSettings = {
   hotkeyAccelerator: '',
   openAtLogin: true,
   startExpanded: true,
+  preferredTerminal: 'auto',
 }
 
 function loadSettings(): PersistedSettings {
@@ -384,6 +389,7 @@ function loadSettings(): PersistedSettings {
         hotkeyAccelerator: typeof p.hotkeyAccelerator === 'string' ? p.hotkeyAccelerator : '',
         openAtLogin: typeof p.openAtLogin === 'boolean' ? p.openAtLogin : true,
         startExpanded: typeof p.startExpanded === 'boolean' ? p.startExpanded : true,
+        preferredTerminal: typeof p.preferredTerminal === 'string' ? p.preferredTerminal : 'auto',
       }
     }
   } catch {}
@@ -412,6 +418,7 @@ export const useThemeStore = create<ThemeState>((set, get) => {
       hotkeyAccelerator: s.hotkeyAccelerator,
       openAtLogin: s.openAtLogin,
       startExpanded: s.startExpanded,
+      preferredTerminal: s.preferredTerminal,
     })
   }
 
@@ -427,6 +434,7 @@ export const useThemeStore = create<ThemeState>((set, get) => {
     hotkeyAccelerator: saved.hotkeyAccelerator,
     openAtLogin: saved.openAtLogin,
     startExpanded: saved.startExpanded,
+    preferredTerminal: saved.preferredTerminal,
     _systemIsDark: true,
     setIsDark: (isDark) => {
       set({ isDark })
@@ -467,6 +475,11 @@ export const useThemeStore = create<ThemeState>((set, get) => {
     setStartExpanded: (on) => {
       set({ startExpanded: on })
       persist()
+    },
+    setPreferredTerminal: (id) => {
+      set({ preferredTerminal: id })
+      persist()
+      try { window.clod.setTerminal(id) } catch {}
     },
     setHotkey: (mode, accelerator) => {
       set({ hotkeyMode: mode, hotkeyAccelerator: accelerator })

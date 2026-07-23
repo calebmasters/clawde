@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { DotsThree, Bell, ArrowsOutSimple, Moon, ShieldCheck, FolderOpen, Cpu, Warning, AlignBottom, Keyboard, Sparkle, TextAa, Power, ChatCircle } from '@phosphor-icons/react'
+import { DotsThree, Bell, ArrowsOutSimple, Moon, ShieldCheck, FolderOpen, Cpu, Warning, AlignBottom, Keyboard, Sparkle, TextAa, Power, ChatCircle, Terminal } from '@phosphor-icons/react'
 import { useThemeStore } from '../theme'
 import { useSessionStore, AVAILABLE_MODELS } from '../stores/sessionStore'
 import { usePopoverLayer } from './PopoverLayer'
@@ -83,6 +83,9 @@ export function SettingsPopover() {
   const hotkeyMode = useThemeStore((s) => s.hotkeyMode)
   const hotkeyAccelerator = useThemeStore((s) => s.hotkeyAccelerator)
   const setHotkey = useThemeStore((s) => s.setHotkey)
+  const preferredTerminal = useThemeStore((s) => s.preferredTerminal)
+  const setPreferredTerminal = useThemeStore((s) => s.setPreferredTerminal)
+  const [terminals, setTerminals] = useState<Array<{ id: string; name: string }>>([])
   const [recording, setRecording] = useState(false)
   const isExpanded = useSessionStore((s) => s.isExpanded)
   const preferredModel = useSessionStore((s) => s.preferredModel)
@@ -109,6 +112,15 @@ export function SettingsPopover() {
     window.clod.checkAccessibility().then((ok) => {
       if (!cancelled) setAccessibilityOk(ok)
     }).catch(() => { if (!cancelled) setAccessibilityOk(null) })
+    return () => { cancelled = true }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    window.clod.listTerminals().then((list) => {
+      if (!cancelled) setTerminals(list)
+    }).catch(() => { if (!cancelled) setTerminals([]) })
     return () => { cancelled = true }
   }, [open])
 
@@ -390,6 +402,38 @@ export function SettingsPopover() {
               </div>
               <div className="text-[10px] mt-1" style={{ color: colors.textTertiary }}>
                 Cmd+Shift+K always works too.
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: colors.popoverBorder }} />
+
+            {/* Terminal for "Open in CLI" */}
+            <div>
+              <div className="flex items-center gap-2 min-w-0 mb-1.5">
+                <Terminal size={14} style={{ color: colors.textTertiary }} />
+                <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
+                  Open CLI in
+                </div>
+              </div>
+              <div className="flex gap-1 flex-wrap">
+                {[{ id: 'auto', name: 'Auto' }, ...terminals].map((t) => {
+                  const active = preferredTerminal === t.id
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setPreferredTerminal(t.id)}
+                      className="rounded-md px-2 py-1 text-[11px] font-medium transition-colors"
+                      style={{
+                        background: active ? colors.accent : colors.surfaceSecondary,
+                        color: active ? colors.textOnAccent : colors.textSecondary,
+                        border: `1px solid ${active ? colors.accent : colors.containerBorder}`,
+                      }}
+                    >
+                      {t.name}
+                    </button>
+                  )
+                })}
               </div>
             </div>
 

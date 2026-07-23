@@ -33,6 +33,8 @@ export interface ClodAPI {
   uninstallPlugin(pluginName: string): Promise<{ ok: boolean; error?: string }>
   setPermissionMode(mode: string): void
   setHotkey(mode: 'double-option' | 'double-command' | 'accelerator', accelerator: string): void
+  setTerminal(id: string): void
+  listTerminals(): Promise<Array<{ id: string; name: string }>>
   copyToClipboard(text: string): void
   setOpenAtLogin(enabled: boolean): void
   checkAccessibility(): Promise<boolean>
@@ -97,6 +99,8 @@ const api: ClodAPI = {
     ipcRenderer.invoke(IPC.MARKETPLACE_UNINSTALL, { pluginName }),
   setPermissionMode: (mode) => ipcRenderer.send(IPC.SET_PERMISSION_MODE, mode),
   setHotkey: (mode, accelerator) => ipcRenderer.send(IPC.SET_HOTKEY, mode, accelerator),
+  setTerminal: (id) => ipcRenderer.send(IPC.SET_TERMINAL, id),
+  listTerminals: () => ipcRenderer.invoke(IPC.LIST_TERMINALS),
   copyToClipboard: (text) => ipcRenderer.send(IPC.COPY_TO_CLIPBOARD, text),
   setOpenAtLogin: (enabled) => ipcRenderer.send(IPC.SET_OPEN_AT_LOGIN, enabled),
   checkAccessibility: () => ipcRenderer.invoke(IPC.CHECK_ACCESSIBILITY),
