@@ -170,6 +170,8 @@ export interface TabState {
   hasChosenDirectory: boolean
   /** Extra directories accessible via --add-dir (session-preserving) */
   additionalDirs: string[]
+  /** Workspace this tab belongs to (null = built-in Scratch workspace) */
+  projectId: string | null
 }
 
 export interface Message {
@@ -294,6 +296,24 @@ export interface SessionLoadMessage {
   timestamp: number
 }
 
+// ─── Projects (workspaces) ───
+
+export interface ProjectDefaults {
+  model?: string
+  permissionMode?: 'ask' | 'auto'
+}
+
+/** A named workspace: directory + its own tab set + default settings. */
+export interface Project {
+  id: string
+  name: string
+  /** Absolute directory path */
+  path: string
+  defaults?: ProjectDefaults
+  createdAt: number
+  lastUsedAt: number
+}
+
 // ─── Marketplace / Plugin Types ───
 
 export type PluginStatus = 'not_installed' | 'checking' | 'installing' | 'installed' | 'failed'
@@ -341,6 +361,12 @@ export const IPC = {
   LIST_SESSIONS: 'clod:list-sessions',
   LOAD_SESSION: 'clod:load-session',
   DELETE_SESSION: 'clod:delete-session',
+
+  // Projects (workspaces)
+  PROJECTS_LIST: 'clod:projects-list',
+  PROJECTS_CREATE: 'clod:projects-create',
+  PROJECTS_UPDATE: 'clod:projects-update',
+  PROJECTS_DELETE: 'clod:projects-delete',
 
   // One-way events (main → renderer)
   TEXT_CHUNK: 'clod:text-chunk',

@@ -187,6 +187,7 @@ function makeLocalTab(): TabState {
     workingDirectory: '~',
     hasChosenDirectory: false,
     additionalDirs: [],
+    projectId: null,
   }
 }
 
