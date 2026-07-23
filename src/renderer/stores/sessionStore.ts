@@ -128,7 +128,7 @@ interface State {
   loadProjects: () => Promise<void>
   setActiveProject: (projectId: string | null) => Promise<void>
   addProject: (name: string, path: string) => Promise<Project | null>
-  editProject: (id: string, patch: { name?: string; defaults?: ProjectDefaults }) => Promise<void>
+  editProject: (id: string, patch: { name?: string; defaults?: ProjectDefaults }) => Promise<Project | null>
   removeProject: (id: string) => Promise<void>
   createTab: () => Promise<string>
   selectTab: (tabId: string) => void
@@ -324,6 +324,7 @@ export const useSessionStore = create<State>((set, get) => ({
     if (updated) {
       set((s) => ({ projects: s.projects.map((p) => (p.id === id ? updated : p)) }))
     }
+    return updated
   },
 
   removeProject: async (id) => {

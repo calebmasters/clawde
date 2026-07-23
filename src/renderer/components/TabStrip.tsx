@@ -4,6 +4,7 @@ import { Plus, X, Copy, Check, ArrowsOutLineHorizontal } from '@phosphor-icons/r
 import { useSessionStore } from '../stores/sessionStore'
 import { HistoryPicker } from './HistoryPicker'
 import { SettingsPopover } from './SettingsPopover'
+import { ProjectSwitcher } from './ProjectSwitcher'
 import { useColors, useThemeStore } from '../theme'
 import type { TabStatus } from '../../shared/types'
 
@@ -82,6 +83,7 @@ function CopyConversationButton() {
 export function TabStrip() {
   const tabs = useSessionStore((s) => s.tabs)
   const activeTabId = useSessionStore((s) => s.activeTabId)
+  const activeProjectId = useSessionStore((s) => s.activeProjectId)
   const selectTab = useSessionStore((s) => s.selectTab)
   const createTab = useSessionStore((s) => s.createTab)
   const closeTab = useSessionStore((s) => s.closeTab)
@@ -89,6 +91,8 @@ export function TabStrip() {
   const expandedUI = useThemeStore((s) => s.expandedUI)
   const setExpandedUI = useThemeStore((s) => s.setExpandedUI)
   const colors = useColors()
+
+  const visibleTabs = tabs.filter((t) => (t.projectId ?? null) === (activeProjectId ?? null))
 
   return (
     <div
@@ -98,6 +102,8 @@ export function TabStrip() {
       // bar still leaves ~8px of visible grey below the pill — even with the top.
       style={{ padding: isExpanded ? '8px 0' : '8px 0 18px' }}
     >
+      <ProjectSwitcher />
+
       {/* Scrollable tabs area — clipped by master card edge */}
       <div className="relative min-w-0 flex-1">
         <div
@@ -114,7 +120,7 @@ export function TabStrip() {
           }}
         >
           <AnimatePresence mode="popLayout">
-            {tabs.map((tab) => {
+            {visibleTabs.map((tab) => {
               const isActive = tab.id === activeTabId
               return (
                 <motion.div
@@ -138,7 +144,7 @@ export function TabStrip() {
                 >
                   <StatusDot status={tab.status} hasUnread={tab.hasUnread} hasPermission={tab.permissionQueue.length > 0} />
                   <span className="truncate flex-1">{tab.title}</span>
-                  {tabs.length > 1 && (
+                  {visibleTabs.length > 1 && (
                     <button
                       onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
                       className="flex-shrink-0 rounded-full w-4 h-4 flex items-center justify-center transition-opacity"
