@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { TabStatus, NormalizedEvent, EnrichedError, Message, TabState, Attachment, InlineImage, CatalogPlugin, PluginStatus } from '../../shared/types'
+import type { TabStatus, NormalizedEvent, EnrichedError, Message, TabState, Attachment, InlineImage, CatalogPlugin, PluginStatus, Project, ProjectDefaults } from '../../shared/types'
 import { useThemeStore } from '../theme'
 import notificationSrc from '../../../resources/notification.mp3'
 
@@ -47,12 +47,14 @@ interface SessionPrefs {
   preferredModel: string | null
   permissionMode: 'ask' | 'auto'
   defaultDirOverride: string | null
+  activeProjectId: string | null
 }
 
 const DEFAULT_PREFS: SessionPrefs = {
   preferredModel: 'claude-sonnet-5',
   permissionMode: 'ask',
   defaultDirOverride: null,
+  activeProjectId: null,
 }
 
 function loadPrefs(): SessionPrefs {
@@ -65,6 +67,7 @@ function loadPrefs(): SessionPrefs {
           ? p.preferredModel : DEFAULT_PREFS.preferredModel,
         permissionMode: p.permissionMode === 'auto' ? 'auto' : 'ask',
         defaultDirOverride: typeof p.defaultDirOverride === 'string' ? p.defaultDirOverride : null,
+        activeProjectId: typeof p.activeProjectId === 'string' ? p.activeProjectId : null,
       }
     }
   } catch {}
@@ -102,6 +105,10 @@ interface State {
   permissionMode: 'ask' | 'auto'
   /** User-chosen default working directory for new chats (null = use main's scratch dir). Persisted. */
   defaultDirOverride: string | null
+  /** Known projects (workspaces), loaded from main on startup. */
+  projects: Project[]
+  /** Active workspace (null = Scratch). Persisted. */
+  activeProjectId: string | null
 
   // Marketplace state
   marketplaceOpen: boolean
@@ -118,6 +125,11 @@ interface State {
   setPreferredModel: (model: string | null) => void
   setPermissionMode: (mode: 'ask' | 'auto') => void
   setDefaultDirOverride: (dir: string | null) => void
+  loadProjects: () => Promise<void>
+  setActiveProject: (projectId: string | null) => Promise<void>
+  addProject: (name: string, path: string) => Promise<Project | null>
+  editProject: (id: string, patch: { name?: string; defaults?: ProjectDefaults }) => Promise<void>
+  removeProject: (id: string) => Promise<void>
   createTab: () => Promise<string>
   selectTab: (tabId: string) => void
   closeTab: (tabId: string) => void
@@ -193,6 +205,15 @@ function makeLocalTab(): TabState {
 
 const initialTab = makeLocalTab()
 
+function prefsSnapshot(s: Pick<State, 'preferredModel' | 'permissionMode' | 'defaultDirOverride' | 'activeProjectId'>): SessionPrefs {
+  return {
+    preferredModel: s.preferredModel,
+    permissionMode: s.permissionMode,
+    defaultDirOverride: s.defaultDirOverride,
+    activeProjectId: s.activeProjectId,
+  }
+}
+
 export const useSessionStore = create<State>((set, get) => ({
   tabs: [initialTab],
   activeTabId: initialTab.id,
@@ -201,6 +222,8 @@ export const useSessionStore = create<State>((set, get) => ({
   preferredModel: initialPrefs.preferredModel,
   permissionMode: initialPrefs.permissionMode,
   defaultDirOverride: initialPrefs.defaultDirOverride,
+  projects: [],
+  activeProjectId: initialPrefs.activeProjectId,
 
   // Marketplace
   marketplaceOpen: false,
@@ -232,43 +255,122 @@ export const useSessionStore = create<State>((set, get) => ({
 
   setPreferredModel: (model) => {
     set({ preferredModel: model })
-    const s = get()
-    savePrefs({ preferredModel: model, permissionMode: s.permissionMode, defaultDirOverride: s.defaultDirOverride })
+    savePrefs(prefsSnapshot(get()))
   },
 
   setPermissionMode: (mode) => {
     set({ permissionMode: mode })
     window.clod.setPermissionMode(mode)
-    const s = get()
-    savePrefs({ preferredModel: s.preferredModel, permissionMode: mode, defaultDirOverride: s.defaultDirOverride })
+    savePrefs(prefsSnapshot(get()))
   },
 
   setDefaultDirOverride: (dir) => {
     set({ defaultDirOverride: dir })
+    savePrefs(prefsSnapshot(get()))
+  },
+
+  loadProjects: async () => {
+    try {
+      const projects = await window.clod.listProjects()
+      set((s) => ({
+        projects,
+        // Drop a persisted active project that no longer exists
+        activeProjectId: s.activeProjectId && projects.some((p) => p.id === s.activeProjectId)
+          ? s.activeProjectId
+          : null,
+      }))
+      savePrefs(prefsSnapshot(get()))
+    } catch {}
+  },
+
+  setActiveProject: async (projectId) => {
     const s = get()
-    savePrefs({ preferredModel: s.preferredModel, permissionMode: s.permissionMode, defaultDirOverride: dir })
+    const project = projectId ? s.projects.find((p) => p.id === projectId) : null
+    if (projectId && !project) return
+
+    set({ activeProjectId: projectId, marketplaceOpen: false })
+    savePrefs(prefsSnapshot(get()))
+
+    // Defaults-at-activation: apply the project's defaults to the global pickers
+    if (project?.defaults?.model) get().setPreferredModel(project.defaults.model)
+    if (project?.defaults?.permissionMode) get().setPermissionMode(project.defaults.permissionMode)
+
+    // Focus the workspace's most recent tab, or create one
+    const visible = get().tabs.filter((t) => (t.projectId ?? null) === (projectId ?? null))
+    if (visible.length > 0) {
+      set({ activeTabId: visible[visible.length - 1].id })
+    } else {
+      await get().createTab()
+    }
+
+    if (project) {
+      const now = Date.now()
+      window.clod.updateProject(project.id, { lastUsedAt: now }).catch(() => {})
+      set((prev) => ({
+        projects: prev.projects.map((p) => (p.id === project.id ? { ...p, lastUsedAt: now } : p)),
+      }))
+    }
+  },
+
+  addProject: async (name, path) => {
+    const project = await window.clod.createProject(name, path).catch(() => null)
+    if (!project) return null
+    set((s) => ({ projects: [...s.projects, project] }))
+    return project
+  },
+
+  editProject: async (id, patch) => {
+    const updated = await window.clod.updateProject(id, patch).catch(() => null)
+    if (updated) {
+      set((s) => ({ projects: s.projects.map((p) => (p.id === id ? updated : p)) }))
+    }
+  },
+
+  removeProject: async (id) => {
+    const ok = await window.clod.deleteProject(id).catch(() => false)
+    if (!ok) return
+    // Never delete sessions or directories; move the project's tabs to Scratch
+    set((s) => ({
+      projects: s.projects.filter((p) => p.id !== id),
+      tabs: s.tabs.map((t) => (t.projectId === id ? { ...t, projectId: null } : t)),
+    }))
+    if (get().activeProjectId === id) {
+      await get().setActiveProject(null)
+    }
   },
 
   createTab: async () => {
-    const homeDir = get().defaultDirOverride || get().staticInfo?.defaultDir || get().staticInfo?.homePath || '~'
+    const s0 = get()
+    const activeProject = s0.activeProjectId
+      ? s0.projects.find((p) => p.id === s0.activeProjectId) ?? null
+      : null
+    const homeDir = s0.defaultDirOverride || s0.staticInfo?.defaultDir || s0.staticInfo?.homePath || '~'
+    const dir = activeProject ? activeProject.path : homeDir
+    const projectId = activeProject?.id ?? null
     try {
       const { tabId } = await window.clod.createTab()
       const tab: TabState = {
         ...makeLocalTab(),
         id: tabId,
-        workingDirectory: homeDir,
+        workingDirectory: dir,
+        hasChosenDirectory: !!activeProject,
+        projectId,
       }
       set((s) => ({
         tabs: [...s.tabs, tab],
-        activeTabId: tab.id,
+        // Only steal focus if the user is still in the workspace this tab was created for
+        ...((s.activeProjectId ?? null) === projectId ? { activeTabId: tab.id } : {}),
       }))
       return tabId
     } catch {
       const tab = makeLocalTab()
-      tab.workingDirectory = homeDir
+      tab.workingDirectory = dir
+      tab.hasChosenDirectory = !!activeProject
+      tab.projectId = projectId
       set((s) => ({
         tabs: [...s.tabs, tab],
-        activeTabId: tab.id,
+        // Only steal focus if the user is still in the workspace this tab was created for
+        ...((s.activeProjectId ?? null) === projectId ? { activeTabId: tab.id } : {}),
       }))
       return tab.id
     }
@@ -409,20 +511,43 @@ export const useSessionStore = create<State>((set, get) => ({
     window.clod.closeTab(tabId).catch(() => {})
 
     const s = get()
+    const closing = s.tabs.find((t) => t.id === tabId)
     const remaining = s.tabs.filter((t) => t.id !== tabId)
 
-    if (s.activeTabId === tabId) {
-      if (remaining.length === 0) {
-        const newTab = makeLocalTab()
-        set({ tabs: [newTab], activeTabId: newTab.id })
-        return
-      }
-      const closedIndex = s.tabs.findIndex((t) => t.id === tabId)
-      const newActive = remaining[Math.min(closedIndex, remaining.length - 1)]
-      set({ tabs: remaining, activeTabId: newActive.id })
-    } else {
+    if (s.activeTabId !== tabId) {
       set({ tabs: remaining })
+      return
     }
+
+    const scope = closing?.projectId ?? null
+    const visibleBefore = s.tabs.filter((t) => (t.projectId ?? null) === scope)
+    const visibleRemaining = remaining.filter((t) => (t.projectId ?? null) === scope)
+
+    if (visibleRemaining.length > 0) {
+      const closedIndex = visibleBefore.findIndex((t) => t.id === tabId)
+      const newActive = visibleRemaining[Math.min(closedIndex, visibleRemaining.length - 1)]
+      set({ tabs: remaining, activeTabId: newActive.id })
+      return
+    }
+
+    // Last visible tab in this workspace — replace with a fresh one (local
+    // immediately, real backend tab id swapped in when available).
+    const project = scope ? s.projects.find((p) => p.id === scope) ?? null : null
+    const newTab = makeLocalTab()
+    newTab.projectId = scope
+    if (project) {
+      newTab.workingDirectory = project.path
+      newTab.hasChosenDirectory = true
+    } else {
+      newTab.workingDirectory = s.defaultDirOverride || s.staticInfo?.defaultDir || s.staticInfo?.homePath || '~'
+    }
+    set({ tabs: [...remaining, newTab], activeTabId: newTab.id })
+    window.clod.createTab().then(({ tabId: realId }) => {
+      set((prev) => ({
+        tabs: prev.tabs.map((t) => (t.id === newTab.id ? { ...t, id: realId } : t)),
+        activeTabId: prev.activeTabId === newTab.id ? realId : prev.activeTabId,
+      }))
+    }).catch(() => {})
   },
 
   clearTab: () => {
@@ -438,6 +563,7 @@ export const useSessionStore = create<State>((set, get) => ({
 
   resumeSession: async (sessionId, title, projectPath) => {
     const defaultDir = projectPath || get().staticInfo?.homePath || '~'
+    const matchedProject = get().projects.find((p) => p.path === defaultDir) ?? null
     try {
       const { tabId } = await window.clod.createTab()
 
@@ -460,12 +586,15 @@ export const useSessionStore = create<State>((set, get) => ({
         workingDirectory: defaultDir,
         hasChosenDirectory: !!projectPath,
         messages,
+        projectId: matchedProject?.id ?? null,
       }
       set((s) => ({
         tabs: [...s.tabs, tab],
         activeTabId: tab.id,
+        activeProjectId: matchedProject?.id ?? null,
         isExpanded: true,
       }))
+      savePrefs(prefsSnapshot(get()))
       // Don't call initSession — the first real prompt will use --resume with the sessionId
       return tabId
     } catch {
@@ -474,11 +603,14 @@ export const useSessionStore = create<State>((set, get) => ({
       tab.title = title || 'Resumed Session'
       tab.workingDirectory = defaultDir
       tab.hasChosenDirectory = !!projectPath
+      tab.projectId = matchedProject?.id ?? null
       set((s) => ({
         tabs: [...s.tabs, tab],
         activeTabId: tab.id,
+        activeProjectId: matchedProject?.id ?? null,
         isExpanded: true,
       }))
+      savePrefs(prefsSnapshot(get()))
       return tab.id
     }
   },
