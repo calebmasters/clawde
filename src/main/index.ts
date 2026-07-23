@@ -12,6 +12,9 @@ import { IPC } from '../shared/types'
 import type { RunOptions, NormalizedEvent, EnrichedError } from '../shared/types'
 import { ProjectsStore } from './projects/store'
 import type { ProjectPatch } from './projects/store'
+import { PresetsStore } from './presets/store'
+import { buildKeybindMap, type KeybindMap } from './presets/keybinds'
+import type { PresetInput } from '../shared/types'
 import { registerModifierDoubleTap, stopModifierDoubleTap } from './modifier-double-tap'
 import { clampRectToArea } from './window-bounds'
 import { launchInTerminal, detectInstalled, isTerminalId, TERMINALS } from './terminal-launcher'
@@ -98,6 +101,19 @@ let registeredAccelerator: string | null = null
 // Preferred terminal for "Open in CLI" ('auto' = detect). Renderer pushes the
 // persisted value on launch, same pattern as SET_HOTKEY.
 let preferredTerminal = 'auto'
+
+// ─── Preset keybind dispatch ───
+let presetsStore: PresetsStore | null = null
+function getPresetsStore(): PresetsStore {
+  if (!presetsStore) {
+    presetsStore = new PresetsStore(join(app.getPath('userData'), 'presets.json'))
+  }
+  return presetsStore
+}
+let presetKeybindMap: KeybindMap = { doubleTap: new Map(), accelerators: new Map() }
+let presetKeybindErrors: Record<string, string> = {}
+let presetAccelerators: string[] = []
+let activePresetId: string | null = null
 
 /**
  * Keep the overlay inside the work area of whichever display it sits on.
@@ -368,6 +384,51 @@ function toggleWindow(source = 'unknown'): void {
   }
 }
 
+/**
+ * Preset keybind semantics: hidden → show with the preset; visible with the
+ * same preset → hide (toggle feel); visible with a different preset → switch
+ * in place. The renderer applies the preset (project/model/permissions/UI)
+ * on PRESET_ACTIVATED — main only owns window visibility and dispatch.
+ */
+function activatePreset(presetId: string, source: string): void {
+  if (!mainWindow) return
+  if (!getPresetsStore().list().some((p) => p.id === presetId)) return
+
+  if (mainWindow.isVisible() && activePresetId === presetId) {
+    hideWindow()
+    return
+  }
+  activePresetId = presetId
+  if (!mainWindow.isVisible()) showWindow(source)
+  broadcast(IPC.PRESET_ACTIVATED, presetId)
+}
+
+/** (Re)register accelerator keybinds for all presets and rebuild the dispatch map. */
+function applyPresetKeybinds(): void {
+  for (const acc of presetAccelerators) {
+    try { globalShortcut.unregister(acc) } catch {}
+  }
+  presetAccelerators = []
+
+  const { map, errors } = buildKeybindMap(getPresetsStore().list())
+  presetKeybindMap = map
+
+  for (const [acc, presetId] of map.accelerators) {
+    try {
+      const ok = globalShortcut.register(acc, () => activatePreset(presetId, `preset shortcut ${acc}`))
+      if (ok) {
+        presetAccelerators.push(acc)
+      } else {
+        errors[presetId] = `"${acc}" could not be registered (in use by another app?)`
+      }
+    } catch {
+      errors[presetId] = `"${acc}" is not a valid shortcut`
+    }
+  }
+  presetKeybindErrors = errors
+  log(`Preset keybinds: ${map.doubleTap.size} double-tap, ${presetAccelerators.length} accelerators, ${Object.keys(errors).length} errors`)
+}
+
 // ─── Resize ───
 // Fixed-height mode: ignore renderer resize events to prevent jank.
 // The native window stays at PILL_HEIGHT; all expand/collapse happens inside the renderer.
@@ -441,6 +502,10 @@ function configureHotkey(mode: HotkeyMode, accelerator: string): void {
     registeredAccelerator = null
   }
   if (mode === 'accelerator' && accelerator && accelerator !== 'CommandOrControl+Shift+K') {
+    if (presetKeybindMap.accelerators.has(accelerator)) {
+      log(`Hotkey: "${accelerator}" is owned by a preset — skipping legacy registration`)
+      return
+    }
     try {
       const ok = globalShortcut.register(accelerator, () => toggleWindow(`shortcut ${accelerator}`))
       if (ok) {
@@ -772,6 +837,56 @@ ipcMain.handle(IPC.PROJECTS_UPDATE, (_event, { id, patch }: { id: string; patch:
 ipcMain.handle(IPC.PROJECTS_DELETE, (_event, { id }: { id: string }) => {
   log(`IPC PROJECTS_DELETE: ${id}`)
   return getProjectsStore().delete(id)
+})
+
+// ─── Presets (modes) ───
+
+ipcMain.handle(IPC.PRESETS_LIST, () => {
+  const store = getPresetsStore()
+  return {
+    presets: store.list(),
+    fileExisted: store.fileExisted,
+    keybindErrors: presetKeybindErrors,
+    activePresetId,
+  }
+})
+
+ipcMain.handle(IPC.PRESETS_CREATE, (_event, { input }: { input: PresetInput }) => {
+  log(`IPC PRESETS_CREATE: ${input?.name}`)
+  const preset = getPresetsStore().create(input)
+  if (preset) applyPresetKeybinds()
+  return preset
+})
+
+ipcMain.handle(IPC.PRESETS_UPDATE, (_event, { id, patch }: { id: string; patch: Partial<PresetInput> }) => {
+  log(`IPC PRESETS_UPDATE: ${id}`)
+  const preset = getPresetsStore().update(id, patch)
+  if (preset) applyPresetKeybinds()
+  return preset
+})
+
+ipcMain.handle(IPC.PRESETS_DELETE, (_event, { id }: { id: string }) => {
+  log(`IPC PRESETS_DELETE: ${id}`)
+  const ok = getPresetsStore().delete(id)
+  if (ok) {
+    if (activePresetId === id) activePresetId = null
+    applyPresetKeybinds()
+  }
+  return ok
+})
+
+ipcMain.on(IPC.SET_ACTIVE_PRESET, (_event, presetId: string | null) => {
+  if (presetId === null) {
+    activePresetId = null
+    log('IPC SET_ACTIVE_PRESET: cleared')
+    return
+  }
+  if (typeof presetId === 'string' && getPresetsStore().list().some((p) => p.id === presetId)) {
+    activePresetId = presetId
+    log(`IPC SET_ACTIVE_PRESET: ${presetId}`)
+  } else {
+    log(`IPC SET_ACTIVE_PRESET: unknown preset — ignoring`)
+  }
 })
 
 // Load conversation history from a session's JSONL file
@@ -1401,11 +1516,24 @@ app.whenReady().then(async () => {
   // permission). The hook watches both modifiers but only toggles for the one matching
   // hotkeyMode, so switching modes at runtime needs no start/stop of the native hook.
   // Fallback: Cmd+Shift+K always works even if Accessibility is denied.
+  // Preset keybinds take precedence; the legacy single-hotkey path remains
+  // until a preset claims the modifier (pre-migration compatibility).
   registerModifierDoubleTap((mod) => {
+    const presetId = presetKeybindMap.doubleTap.get(mod)
+    if (presetId) {
+      activatePreset(presetId, `double-tap ${mod}`)
+      return
+    }
     if (mod === 'option' && hotkeyMode === 'double-option') toggleWindow('double-tap Option')
     if (mod === 'command' && hotkeyMode === 'double-command') toggleWindow('double-tap Command')
   })
-  globalShortcut.register('CommandOrControl+Shift+K', () => toggleWindow('shortcut Cmd/Ctrl+Shift+K'))
+  // Fallback: always registered. Activates the first preset when one exists.
+  globalShortcut.register('CommandOrControl+Shift+K', () => {
+    const first = getPresetsStore().list()[0]
+    if (first) activatePreset(first.id, 'fallback shortcut')
+    else toggleWindow('shortcut Cmd/Ctrl+Shift+K')
+  })
+  applyPresetKeybinds()
 
   const trayIconPath = join(__dirname, '../../resources/trayTemplate.png')
   const trayIcon = nativeImage.createFromPath(trayIconPath)
