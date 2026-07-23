@@ -1,31 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { DotsThree, Bell, ArrowsOutSimple, Moon, ShieldCheck, FolderOpen, Cpu, Warning, AlignBottom, Keyboard, Sparkle, TextAa, Power, ChatCircle, Terminal } from '@phosphor-icons/react'
+import { DotsThree, Bell, ArrowsOutSimple, Moon, ShieldCheck, FolderOpen, Cpu, Warning, AlignBottom, Sparkle, TextAa, Power, ChatCircle, Terminal } from '@phosphor-icons/react'
 import { useThemeStore } from '../theme'
 import { useSessionStore, AVAILABLE_MODELS } from '../stores/sessionStore'
 import { usePopoverLayer } from './PopoverLayer'
 import { useColors } from '../theme'
-
-/** Build an Electron accelerator string from a keydown event, or null if it's
- *  just a modifier / has no modifier (globals need at least one modifier). */
-function toAccelerator(e: KeyboardEvent): string | null {
-  const key = e.key
-  if (key === 'Meta' || key === 'Control' || key === 'Alt' || key === 'Shift') return null
-  const mods: string[] = []
-  if (e.metaKey) mods.push('Command')
-  if (e.ctrlKey) mods.push('Control')
-  if (e.altKey) mods.push('Alt')
-  if (e.shiftKey) mods.push('Shift')
-  if (mods.length === 0) return null
-  const arrows: Record<string, string> = { ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right' }
-  let name: string
-  if (key === ' ') name = 'Space'
-  else if (arrows[key]) name = arrows[key]
-  else if (key.length === 1) name = key.toUpperCase()
-  else name = key // Enter, Tab, F1…F24, etc.
-  return [...mods, name].join('+')
-}
+import { PresetsSection } from './PresetEditor'
 
 function RowToggle({
   checked,
@@ -80,13 +61,9 @@ export function SettingsPopover() {
   const setOpenAtLogin = useThemeStore((s) => s.setOpenAtLogin)
   const startExpanded = useThemeStore((s) => s.startExpanded)
   const setStartExpanded = useThemeStore((s) => s.setStartExpanded)
-  const hotkeyMode = useThemeStore((s) => s.hotkeyMode)
-  const hotkeyAccelerator = useThemeStore((s) => s.hotkeyAccelerator)
-  const setHotkey = useThemeStore((s) => s.setHotkey)
   const preferredTerminal = useThemeStore((s) => s.preferredTerminal)
   const setPreferredTerminal = useThemeStore((s) => s.setPreferredTerminal)
   const [terminals, setTerminals] = useState<Array<{ id: string; name: string }>>([])
-  const [recording, setRecording] = useState(false)
   const isExpanded = useSessionStore((s) => s.isExpanded)
   const preferredModel = useSessionStore((s) => s.preferredModel)
   const setPreferredModel = useSessionStore((s) => s.setPreferredModel)
@@ -123,20 +100,6 @@ export function SettingsPopover() {
     }).catch(() => { if (!cancelled) setTerminals([]) })
     return () => { cancelled = true }
   }, [open])
-
-  // While recording a custom shortcut, capture the next key combo.
-  useEffect(() => {
-    if (!recording) return
-    const handler = (e: KeyboardEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      if (e.key === 'Escape') { setRecording(false); return }
-      const accel = toAccelerator(e)
-      if (accel) { setHotkey('accelerator', accel); setRecording(false) }
-    }
-    window.addEventListener('keydown', handler, true)
-    return () => window.removeEventListener('keydown', handler, true)
-  }, [recording, setHotkey])
 
   const handleChooseFolder = useCallback(async () => {
     const dir = await window.clod.selectDirectory()
@@ -351,58 +314,10 @@ export function SettingsPopover() {
 
             <div style={{ height: 1, background: colors.popoverBorder }} />
 
-            {/* Shortcut */}
-            <div>
-              <div className="flex items-center gap-2 min-w-0 mb-1.5">
-                <Keyboard size={14} style={{ color: colors.textTertiary }} />
-                <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
-                  Shortcut
-                </div>
-              </div>
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => setHotkey('double-option', hotkeyAccelerator)}
-                  className="flex-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors"
-                  style={{
-                    background: hotkeyMode === 'double-option' ? colors.accent : colors.surfaceSecondary,
-                    color: hotkeyMode === 'double-option' ? '#fff' : colors.textSecondary,
-                    border: `1px solid ${hotkeyMode === 'double-option' ? colors.accent : colors.containerBorder}`,
-                  }}
-                  title="Double-tap Option to toggle"
-                >
-                  Double ⌥
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHotkey('double-command', hotkeyAccelerator)}
-                  className="flex-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors"
-                  style={{
-                    background: hotkeyMode === 'double-command' ? colors.accent : colors.surfaceSecondary,
-                    color: hotkeyMode === 'double-command' ? '#fff' : colors.textSecondary,
-                    border: `1px solid ${hotkeyMode === 'double-command' ? colors.accent : colors.containerBorder}`,
-                  }}
-                  title="Double-tap Command to toggle"
-                >
-                  Double ⌘
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRecording(true)}
-                  className="flex-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors truncate"
-                  style={{
-                    background: hotkeyMode === 'accelerator' ? colors.accent : colors.surfaceSecondary,
-                    color: hotkeyMode === 'accelerator' ? '#fff' : colors.textSecondary,
-                    border: `1px solid ${hotkeyMode === 'accelerator' ? colors.accent : colors.containerBorder}`,
-                  }}
-                  title="Click, then press a key combo"
-                >
-                  {recording ? 'Press keys…' : (hotkeyMode === 'accelerator' && hotkeyAccelerator ? hotkeyAccelerator : 'Custom…')}
-                </button>
-              </div>
-              <div className="text-[10px] mt-1" style={{ color: colors.textTertiary }}>
-                Cmd+Shift+K always works too.
-              </div>
+            {/* Modes (presets with keybinds) */}
+            <PresetsSection />
+            <div className="text-[10px] -mt-1" style={{ color: colors.textTertiary }}>
+              Cmd+Shift+K always activates the first mode.
             </div>
 
             <div style={{ height: 1, background: colors.popoverBorder }} />

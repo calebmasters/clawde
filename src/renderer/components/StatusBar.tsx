@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Terminal, CaretDown, Check, FolderOpen, Plus, X, ShieldCheck } from '@phosphor-icons/react'
+import { Terminal, CaretDown, Check, FolderOpen, Plus, X, ShieldCheck, Lightning } from '@phosphor-icons/react'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { useSessionStore, AVAILABLE_MODELS, getModelDisplayLabel } from '../stores/sessionStore'
 import { usePopoverLayer } from './PopoverLayer'
 import { useColors } from '../theme'
+import { formatKeybind } from './PresetEditor'
 
 /* ─── Model Picker (inline — tightly coupled to StatusBar) ─── */
 
@@ -251,6 +252,105 @@ function PermissionModePicker() {
   )
 }
 
+/* ─── Preset (mode) badge ─── */
+
+function PresetBadge() {
+  const presets = useSessionStore((s) => s.presets)
+  const activePresetId = useSessionStore((s) => s.activePresetId)
+  const applyPreset = useSessionStore((s) => s.applyPreset)
+  const popoverLayer = usePopoverLayer()
+  const colors = useColors()
+
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ bottom: 0, left: 0 })
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (triggerRef.current?.contains(target)) return
+      if (popoverRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  if (presets.length === 0) return null
+  const active = activePresetId ? presets.find((p) => p.id === activePresetId) ?? null : null
+
+  const handleToggle = () => {
+    if (!open && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect()
+      setPos({ bottom: window.innerHeight - rect.top + 6, left: rect.left })
+    }
+    setOpen((o) => !o)
+  }
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        onClick={handleToggle}
+        className="flex items-center gap-0.5 text-[10px] rounded-full px-1.5 py-0.5 transition-colors"
+        style={{ color: active ? colors.accent : colors.textTertiary, cursor: 'pointer' }}
+        title="Switch mode"
+      >
+        <Lightning size={11} weight={active ? 'fill' : 'regular'} />
+        {active ? active.name : 'Mode'}
+        <CaretDown size={10} style={{ opacity: 0.6 }} />
+      </button>
+
+      {popoverLayer && open && createPortal(
+        <motion.div
+          ref={popoverRef}
+          data-clod-ui
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 4 }}
+          transition={{ duration: 0.12 }}
+          className="rounded-xl"
+          style={{
+            position: 'fixed',
+            bottom: pos.bottom,
+            left: pos.left,
+            width: 200,
+            pointerEvents: 'auto',
+            background: colors.popoverBg,
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            boxShadow: colors.popoverShadow,
+            border: `1px solid ${colors.popoverBorder}`,
+          }}
+        >
+          <div className="py-1">
+            {presets.map((p) => {
+              const isActive = p.id === activePresetId
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => { void applyPreset(p.id); setOpen(false) }}
+                  className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] transition-colors"
+                  style={{ color: isActive ? colors.textPrimary : colors.textSecondary, fontWeight: isActive ? 600 : 400 }}
+                >
+                  <span className="truncate">{p.name}</span>
+                  <span className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className="text-[10px]" style={{ color: colors.textTertiary }}>{formatKeybind(p.keybind)}</span>
+                    {isActive && <Check size={12} style={{ color: colors.accent }} />}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </motion.div>,
+        popoverLayer,
+      )}
+    </>
+  )
+}
+
 /* ─── StatusBar ─── */
 
 /** Get a compact display path: basename for deep paths, ~ for home */
@@ -442,6 +542,10 @@ export function StatusBar() {
         <span style={{ color: colors.textMuted, fontSize: 10 }}>|</span>
 
         <PermissionModePicker />
+
+        <span style={{ color: colors.textMuted, fontSize: 10 }}>|</span>
+
+        <PresetBadge />
       </div>
 
       {/* Right — Open in CLI */}
