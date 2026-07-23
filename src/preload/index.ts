@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/types'
-import type { RunOptions, NormalizedEvent, HealthReport, EnrichedError, Attachment, SessionMeta, CatalogPlugin, SessionLoadMessage, Project, ProjectDefaults } from '../shared/types'
+import type { RunOptions, NormalizedEvent, HealthReport, EnrichedError, Attachment, SessionMeta, CatalogPlugin, SessionLoadMessage, Project, ProjectDefaults, Preset, PresetInput } from '../shared/types'
 
 export interface ClodAPI {
   // ─── Request-response (renderer → main) ───
@@ -31,6 +31,12 @@ export interface ClodAPI {
   createProject(name: string, path: string): Promise<Project | null>
   updateProject(id: string, patch: { name?: string; path?: string; defaults?: ProjectDefaults; lastUsedAt?: number }): Promise<Project | null>
   deleteProject(id: string): Promise<boolean>
+  listPresets(): Promise<{ presets: Preset[]; fileExisted: boolean; keybindErrors: Record<string, string>; activePresetId: string | null }>
+  createPreset(input: PresetInput): Promise<Preset | null>
+  updatePreset(id: string, patch: Partial<PresetInput>): Promise<Preset | null>
+  deletePreset(id: string): Promise<boolean>
+  setActivePreset(presetId: string | null): void
+  onPresetActivated(callback: (presetId: string) => void): () => void
   fetchMarketplace(forceRefresh?: boolean): Promise<{ plugins: CatalogPlugin[]; error: string | null }>
   listInstalledPlugins(): Promise<string[]>
   installPlugin(repo: string, pluginName: string, marketplace: string, sourcePath?: string, isSkillMd?: boolean): Promise<{ ok: boolean; error?: string }>
@@ -99,6 +105,16 @@ const api: ClodAPI = {
   createProject: (name, path) => ipcRenderer.invoke(IPC.PROJECTS_CREATE, { name, path }),
   updateProject: (id, patch) => ipcRenderer.invoke(IPC.PROJECTS_UPDATE, { id, patch }),
   deleteProject: (id) => ipcRenderer.invoke(IPC.PROJECTS_DELETE, { id }),
+  listPresets: () => ipcRenderer.invoke(IPC.PRESETS_LIST),
+  createPreset: (input) => ipcRenderer.invoke(IPC.PRESETS_CREATE, { input }),
+  updatePreset: (id, patch) => ipcRenderer.invoke(IPC.PRESETS_UPDATE, { id, patch }),
+  deletePreset: (id) => ipcRenderer.invoke(IPC.PRESETS_DELETE, { id }),
+  setActivePreset: (presetId) => ipcRenderer.send(IPC.SET_ACTIVE_PRESET, presetId),
+  onPresetActivated: (callback) => {
+    const handler = (_e: Electron.IpcRendererEvent, presetId: string) => callback(presetId)
+    ipcRenderer.on(IPC.PRESET_ACTIVATED, handler)
+    return () => ipcRenderer.removeListener(IPC.PRESET_ACTIVATED, handler)
+  },
   fetchMarketplace: (forceRefresh) => ipcRenderer.invoke(IPC.MARKETPLACE_FETCH, { forceRefresh }),
   listInstalledPlugins: () => ipcRenderer.invoke(IPC.MARKETPLACE_INSTALLED),
   installPlugin: (repo, pluginName, marketplace, sourcePath, isSkillMd) =>

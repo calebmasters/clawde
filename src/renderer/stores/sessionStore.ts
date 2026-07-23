@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { TabStatus, NormalizedEvent, EnrichedError, Message, TabState, Attachment, InlineImage, CatalogPlugin, PluginStatus, Project, ProjectDefaults } from '../../shared/types'
+import type { TabStatus, NormalizedEvent, EnrichedError, Message, TabState, Attachment, InlineImage, CatalogPlugin, PluginStatus, Project, ProjectDefaults, Preset, PresetInput, PresetKeybind } from '../../shared/types'
 import { useThemeStore } from '../theme'
 import notificationSrc from '../../../resources/notification.mp3'
 
@@ -109,6 +109,12 @@ interface State {
   projects: Project[]
   /** Active workspace (null = Scratch). Persisted. */
   activeProjectId: string | null
+  /** Launch modes. Loaded from main on startup. */
+  presets: Preset[]
+  /** Keybind registration errors keyed by preset id (shown in Settings). */
+  presetKeybindErrors: Record<string, string>
+  /** The last-activated preset (badge display). */
+  activePresetId: string | null
 
   // Marketplace state
   marketplaceOpen: boolean
@@ -130,6 +136,11 @@ interface State {
   addProject: (name: string, path: string) => Promise<Project | null>
   editProject: (id: string, patch: { name?: string; defaults?: ProjectDefaults }) => Promise<Project | null>
   removeProject: (id: string) => Promise<void>
+  loadPresets: () => Promise<void>
+  applyPreset: (presetId: string, notifyMain?: boolean) => Promise<void>
+  addPreset: (input: PresetInput) => Promise<Preset | null>
+  editPreset: (id: string, patch: Partial<PresetInput>) => Promise<void>
+  removePreset: (id: string) => Promise<void>
   createTab: () => Promise<string>
   selectTab: (tabId: string) => void
   closeTab: (tabId: string) => void
@@ -160,6 +171,11 @@ interface State {
 
 let msgCounter = 0
 const nextMsgId = () => `msg-${++msgCounter}`
+
+// First-run preset migration must only ever be attempted once per renderer
+// session — main's PresetsStore caches fileExisted from process start, so the
+// flag alone can't distinguish "fresh install" from "user deleted every preset".
+let presetMigrationAttempted = false
 
 // ─── Notification sound (plays when task completes while window is hidden) ───
 const notificationAudio = new Audio(notificationSrc)
@@ -224,6 +240,9 @@ export const useSessionStore = create<State>((set, get) => ({
   defaultDirOverride: initialPrefs.defaultDirOverride,
   projects: [],
   activeProjectId: initialPrefs.activeProjectId,
+  presets: [],
+  presetKeybindErrors: {},
+  activePresetId: null,
 
   // Marketplace
   marketplaceOpen: false,
@@ -338,6 +357,66 @@ export const useSessionStore = create<State>((set, get) => ({
     if (get().activeProjectId === id) {
       await get().setActiveProject(null)
     }
+  },
+
+  loadPresets: async () => {
+    try {
+      const result = await window.clod.listPresets()
+      if (!presetMigrationAttempted && !result.fileExisted && result.presets.length === 0) {
+        presetMigrationAttempted = true
+        // First run: migrate the legacy toggle hotkey into a "Default" preset.
+        const t = useThemeStore.getState()
+        const keybind: PresetKeybind = t.hotkeyMode === 'accelerator' && t.hotkeyAccelerator
+          ? { kind: 'accelerator', accelerator: t.hotkeyAccelerator }
+          : { kind: 'double-tap', modifier: t.hotkeyMode === 'double-command' ? 'command' : 'option' }
+        const created = await window.clod.createPreset({ name: 'Default', keybind }).catch(() => null)
+        if (created) {
+          set({ presets: [created], presetKeybindErrors: {}, activePresetId: created.id })
+          return
+        }
+      }
+      set({
+        presets: result.presets,
+        presetKeybindErrors: result.keybindErrors,
+        activePresetId: result.activePresetId,
+      })
+    } catch {}
+  },
+
+  applyPreset: async (presetId, notifyMain = true) => {
+    const preset = get().presets.find((p) => p.id === presetId)
+    if (!preset) return
+    set({ activePresetId: presetId })
+    // Project first: setActiveProject applies the project's own defaults,
+    // then the preset's explicit settings override them.
+    if (preset.projectId !== undefined) {
+      await get().setActiveProject(preset.projectId ?? null)
+    }
+    if (preset.model) get().setPreferredModel(preset.model)
+    if (preset.permissionMode) get().setPermissionMode(preset.permissionMode)
+    if (preset.startExpanded !== undefined) set({ isExpanded: preset.startExpanded })
+    if (notifyMain) {
+      try { window.clod.setActivePreset(presetId) } catch {}
+    }
+  },
+
+  addPreset: async (input) => {
+    const preset = await window.clod.createPreset(input).catch(() => null)
+    if (preset) {
+      // Refresh from main so keybindErrors reflect the new registration state
+      await get().loadPresets()
+    }
+    return preset
+  },
+
+  editPreset: async (id, patch) => {
+    const updated = await window.clod.updatePreset(id, patch).catch(() => null)
+    if (updated) await get().loadPresets()
+  },
+
+  removePreset: async (id) => {
+    const ok = await window.clod.deletePreset(id).catch(() => false)
+    if (ok) await get().loadPresets()
   },
 
   createTab: async () => {

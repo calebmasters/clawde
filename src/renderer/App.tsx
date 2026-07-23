@@ -83,6 +83,7 @@ export default function App() {
   useEffect(() => {
     useSessionStore.getState().initStaticInfo().then(async () => {
       await useSessionStore.getState().loadProjects()
+      await useSessionStore.getState().loadPresets()
       const st = useSessionStore.getState()
       const project = st.activeProjectId ? st.projects.find((p) => p.id === st.activeProjectId) ?? null : null
       const homeDir = st.defaultDirOverride || st.staticInfo?.defaultDir || st.staticInfo?.homePath || '~'
@@ -103,6 +104,15 @@ export default function App() {
         }).catch(() => {})
       }
     })
+  }, [])
+
+  // Preset keybind fired in main → apply the preset here (main already
+  // handled window visibility; notifyMain=false avoids an echo).
+  useEffect(() => {
+    const unsub = window.clod.onPresetActivated((presetId) => {
+      void useSessionStore.getState().applyPreset(presetId, false)
+    })
+    return unsub
   }, [])
 
   // Shared drag ref — must be declared before the setIgnoreMouseEvents effect so both closures can read it
