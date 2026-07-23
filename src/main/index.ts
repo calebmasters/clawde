@@ -10,6 +10,8 @@ import { log as _log, LOG_FILE, flushLogs } from './logger'
 import { getCliEnv } from './cli-env'
 import { IPC } from '../shared/types'
 import type { RunOptions, NormalizedEvent, EnrichedError } from '../shared/types'
+import { ProjectsStore } from './projects/store'
+import type { ProjectPatch } from './projects/store'
 import { registerModifierDoubleTap, stopModifierDoubleTap } from './modifier-double-tap'
 import { clampRectToArea } from './window-bounds'
 import { launchInTerminal, detectInstalled, isTerminalId, TERMINALS } from './terminal-launcher'
@@ -66,6 +68,14 @@ let lastWindowBounds: Electron.Rectangle | null = null
 const INTERACTIVE_PTY = process.env.CLOD_INTERACTIVE_PERMISSIONS_PTY === '1'
 
 const controlPlane = new ControlPlane(INTERACTIVE_PTY)
+
+let projectsStore: ProjectsStore | null = null
+function getProjectsStore(): ProjectsStore {
+  if (!projectsStore) {
+    projectsStore = new ProjectsStore(join(app.getPath('userData'), 'projects.json'))
+  }
+  return projectsStore
+}
 
 // Keep native width fixed to avoid renderer animation vs setBounds race.
 // The UI itself still launches in compact mode; extra width is transparent/click-through.
@@ -741,6 +751,27 @@ ipcMain.handle(IPC.DELETE_SESSION, (_e, arg: { sessionId: string; projectPath?: 
     log(`DELETE_SESSION error: ${err}`)
     return false
   }
+})
+
+// ─── Projects (workspaces) ───
+
+ipcMain.handle(IPC.PROJECTS_LIST, () => {
+  return getProjectsStore().list()
+})
+
+ipcMain.handle(IPC.PROJECTS_CREATE, (_event, { name, path }: { name: string; path: string }) => {
+  log(`IPC PROJECTS_CREATE: ${name} → ${path}`)
+  return getProjectsStore().create({ name, path })
+})
+
+ipcMain.handle(IPC.PROJECTS_UPDATE, (_event, { id, patch }: { id: string; patch: ProjectPatch }) => {
+  log(`IPC PROJECTS_UPDATE: ${id}`)
+  return getProjectsStore().update(id, patch)
+})
+
+ipcMain.handle(IPC.PROJECTS_DELETE, (_event, { id }: { id: string }) => {
+  log(`IPC PROJECTS_DELETE: ${id}`)
+  return getProjectsStore().delete(id)
 })
 
 // Load conversation history from a session's JSONL file

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/types'
-import type { RunOptions, NormalizedEvent, HealthReport, EnrichedError, Attachment, SessionMeta, CatalogPlugin, SessionLoadMessage } from '../shared/types'
+import type { RunOptions, NormalizedEvent, HealthReport, EnrichedError, Attachment, SessionMeta, CatalogPlugin, SessionLoadMessage, Project, ProjectDefaults } from '../shared/types'
 
 export interface ClodAPI {
   // ─── Request-response (renderer → main) ───
@@ -27,6 +27,10 @@ export interface ClodAPI {
   listSessions(projectPath?: string): Promise<SessionMeta[]>
   loadSession(sessionId: string, projectPath?: string): Promise<SessionLoadMessage[]>
   deleteSession(sessionId: string, projectPath?: string): Promise<boolean>
+  listProjects(): Promise<Project[]>
+  createProject(name: string, path: string): Promise<Project | null>
+  updateProject(id: string, patch: { name?: string; path?: string; defaults?: ProjectDefaults; lastUsedAt?: number }): Promise<Project | null>
+  deleteProject(id: string): Promise<boolean>
   fetchMarketplace(forceRefresh?: boolean): Promise<{ plugins: CatalogPlugin[]; error: string | null }>
   listInstalledPlugins(): Promise<string[]>
   installPlugin(repo: string, pluginName: string, marketplace: string, sourcePath?: string, isSkillMd?: boolean): Promise<{ ok: boolean; error?: string }>
@@ -91,6 +95,10 @@ const api: ClodAPI = {
   listSessions: (projectPath?: string) => ipcRenderer.invoke(IPC.LIST_SESSIONS, projectPath),
   loadSession: (sessionId: string, projectPath?: string) => ipcRenderer.invoke(IPC.LOAD_SESSION, { sessionId, projectPath }),
   deleteSession: (sessionId: string, projectPath?: string) => ipcRenderer.invoke(IPC.DELETE_SESSION, { sessionId, projectPath }),
+  listProjects: () => ipcRenderer.invoke(IPC.PROJECTS_LIST),
+  createProject: (name, path) => ipcRenderer.invoke(IPC.PROJECTS_CREATE, { name, path }),
+  updateProject: (id, patch) => ipcRenderer.invoke(IPC.PROJECTS_UPDATE, { id, patch }),
+  deleteProject: (id) => ipcRenderer.invoke(IPC.PROJECTS_DELETE, { id }),
   fetchMarketplace: (forceRefresh) => ipcRenderer.invoke(IPC.MARKETPLACE_FETCH, { forceRefresh }),
   listInstalledPlugins: () => ipcRenderer.invoke(IPC.MARKETPLACE_INSTALLED),
   installPlugin: (repo, pluginName, marketplace, sourcePath, isSkillMd) =>
