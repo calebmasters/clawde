@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { DotsThree, Bell, ArrowsOutSimple, Moon, ShieldCheck, FolderOpen, Cpu, Warning, AlignBottom, Keyboard, Sparkle, TextAa, Power } from '@phosphor-icons/react'
+import { DotsThree, Bell, ArrowsOutSimple, Moon, ShieldCheck, FolderOpen, Cpu, Warning, AlignBottom, Keyboard, Sparkle, TextAa, Power, ChatCircle } from '@phosphor-icons/react'
 import { useThemeStore } from '../theme'
 import { useSessionStore, AVAILABLE_MODELS } from '../stores/sessionStore'
 import { usePopoverLayer } from './PopoverLayer'
@@ -78,6 +78,8 @@ export function SettingsPopover() {
   const setBorderAnimation = useThemeStore((s) => s.setBorderAnimation)
   const openAtLogin = useThemeStore((s) => s.openAtLogin)
   const setOpenAtLogin = useThemeStore((s) => s.setOpenAtLogin)
+  const startExpanded = useThemeStore((s) => s.startExpanded)
+  const setStartExpanded = useThemeStore((s) => s.setStartExpanded)
   const hotkeyMode = useThemeStore((s) => s.hotkeyMode)
   const hotkeyAccelerator = useThemeStore((s) => s.hotkeyAccelerator)
   const setHotkey = useThemeStore((s) => s.setHotkey)
@@ -277,6 +279,26 @@ export function SettingsPopover() {
                   }}
                   colors={colors}
                   label="Toggle full width panel"
+                />
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: colors.popoverBorder }} />
+
+            {/* Start expanded */}
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <ChatCircle size={14} style={{ color: colors.textTertiary }} />
+                  <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
+                    Start expanded
+                  </div>
+                </div>
+                <RowToggle
+                  checked={startExpanded}
+                  onChange={setStartExpanded}
+                  colors={colors}
+                  label="Open the chat expanded by default"
                 />
               </div>
             </div>

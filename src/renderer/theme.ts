@@ -300,6 +300,8 @@ interface ThemeState {
   hotkeyAccelerator: string
   /** Launch Clod automatically at login */
   openAtLogin: boolean
+  /** Whether the chat card starts expanded when the app launches */
+  startExpanded: boolean
   /** OS-reported dark mode — used when themeMode is 'system' */
   _systemIsDark: boolean
   setIsDark: (isDark: boolean) => void
@@ -311,6 +313,7 @@ interface ThemeState {
   setBorderAnimation: (on: boolean) => void
   setHotkey: (mode: HotkeyMode, accelerator: string) => void
   setOpenAtLogin: (on: boolean) => void
+  setStartExpanded: (on: boolean) => void
   /** Called by OS theme change listener — updates system value */
   setSystemTheme: (isDark: boolean) => void
 }
@@ -346,6 +349,7 @@ interface PersistedSettings {
   hotkeyMode: HotkeyMode
   hotkeyAccelerator: string
   openAtLogin: boolean
+  startExpanded: boolean
 }
 
 const DEFAULT_SETTINGS: PersistedSettings = {
@@ -358,6 +362,7 @@ const DEFAULT_SETTINGS: PersistedSettings = {
   hotkeyMode: 'double-option',
   hotkeyAccelerator: '',
   openAtLogin: true,
+  startExpanded: true,
 }
 
 function loadSettings(): PersistedSettings {
@@ -378,6 +383,7 @@ function loadSettings(): PersistedSettings {
             : 'double-option',
         hotkeyAccelerator: typeof p.hotkeyAccelerator === 'string' ? p.hotkeyAccelerator : '',
         openAtLogin: typeof p.openAtLogin === 'boolean' ? p.openAtLogin : true,
+        startExpanded: typeof p.startExpanded === 'boolean' ? p.startExpanded : true,
       }
     }
   } catch {}
@@ -405,6 +411,7 @@ export const useThemeStore = create<ThemeState>((set, get) => {
       hotkeyMode: s.hotkeyMode,
       hotkeyAccelerator: s.hotkeyAccelerator,
       openAtLogin: s.openAtLogin,
+      startExpanded: s.startExpanded,
     })
   }
 
@@ -419,6 +426,7 @@ export const useThemeStore = create<ThemeState>((set, get) => {
     hotkeyMode: saved.hotkeyMode,
     hotkeyAccelerator: saved.hotkeyAccelerator,
     openAtLogin: saved.openAtLogin,
+    startExpanded: saved.startExpanded,
     _systemIsDark: true,
     setIsDark: (isDark) => {
       set({ isDark })
@@ -455,6 +463,10 @@ export const useThemeStore = create<ThemeState>((set, get) => {
       set({ openAtLogin: on })
       persist()
       try { window.clod.setOpenAtLogin(on) } catch {}
+    },
+    setStartExpanded: (on) => {
+      set({ startExpanded: on })
+      persist()
     },
     setHotkey: (mode, accelerator) => {
       set({ hotkeyMode: mode, hotkeyAccelerator: accelerator })

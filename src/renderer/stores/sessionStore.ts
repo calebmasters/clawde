@@ -195,7 +195,7 @@ const initialTab = makeLocalTab()
 export const useSessionStore = create<State>((set, get) => ({
   tabs: [initialTab],
   activeTabId: initialTab.id,
-  isExpanded: false,
+  isExpanded: useThemeStore.getState().startExpanded,
   staticInfo: null,
   preferredModel: initialPrefs.preferredModel,
   permissionMode: initialPrefs.permissionMode,
@@ -652,6 +652,7 @@ export const useSessionStore = create<State>((set, get) => ({
     // Optimistic update: clear attachments
     // If busy, add to queuedPrompts (shown at bottom); otherwise add to messages and set connecting
     set((s) => ({
+      isExpanded: true,
       tabs: s.tabs.map((t) => {
         if (t.id !== activeTabId) return t
         const withEffectiveBase = t.hasChosenDirectory

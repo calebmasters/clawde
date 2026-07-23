@@ -639,7 +639,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
       {/* Copy button — always in DOM, shown via CSS :hover (no React state needed).
           Absolute positioning so it never shifts the text layout. */}
       {message.content.trim() && (
-        <div className="absolute bottom-0 right-0 opacity-0 group-hover/msg:opacity-100 transition-opacity duration-100">
+        <div className="absolute bottom-0 right-0 opacity-60 group-hover/msg:opacity-100 transition-opacity duration-100">
           <CopyButton text={message.content} />
         </div>
       )}
