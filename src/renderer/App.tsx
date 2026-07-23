@@ -81,13 +81,19 @@ export default function App() {
   }, [setSystemTheme])
 
   useEffect(() => {
-    useSessionStore.getState().initStaticInfo().then(() => {
-      const homeDir = useSessionStore.getState().defaultDirOverride || useSessionStore.getState().staticInfo?.defaultDir || useSessionStore.getState().staticInfo?.homePath || '~'
-      const tab = useSessionStore.getState().tabs[0]
+    useSessionStore.getState().initStaticInfo().then(async () => {
+      await useSessionStore.getState().loadProjects()
+      const st = useSessionStore.getState()
+      const project = st.activeProjectId ? st.projects.find((p) => p.id === st.activeProjectId) ?? null : null
+      const homeDir = st.defaultDirOverride || st.staticInfo?.defaultDir || st.staticInfo?.homePath || '~'
+      const dir = project ? project.path : homeDir
+      const tab = st.tabs[0]
       if (tab) {
-        // Set working directory to home by default (user hasn't chosen yet)
+        // Point the initial tab at the restored workspace (or home for Scratch)
         useSessionStore.setState((s) => ({
-          tabs: s.tabs.map((t, i) => (i === 0 ? { ...t, workingDirectory: homeDir, hasChosenDirectory: false } : t)),
+          tabs: s.tabs.map((t, i) => (i === 0
+            ? { ...t, workingDirectory: dir, hasChosenDirectory: !!project, projectId: project?.id ?? null }
+            : t)),
         }))
         window.clod.createTab().then(({ tabId }) => {
           useSessionStore.setState((s) => ({

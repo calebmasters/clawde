@@ -35,6 +35,8 @@ export function HistoryPicker() {
     (a, b) => a === b || (!!a && !!b && a.hasChosenDirectory === b.hasChosenDirectory && a.workingDirectory === b.workingDirectory),
   )
   const staticInfo = useSessionStore((s) => s.staticInfo)
+  const projects = useSessionStore((s) => s.projects)
+  const defaultDirOverride = useSessionStore((s) => s.defaultDirOverride)
   const popoverLayer = usePopoverLayer()
   const colors = useColors()
   const effectiveProjectPath = activeTab?.hasChosenDirectory
@@ -42,7 +44,9 @@ export function HistoryPicker() {
     : (staticInfo?.homePath || activeTab?.workingDirectory || '~')
 
   const [open, setOpen] = useState(false)
-  const [sessions, setSessions] = useState<SessionMeta[]>([])
+  type TaggedSession = SessionMeta & { projectPath: string }
+  const [sessions, setSessions] = useState<TaggedSession[]>([])
+  const [allProjects, setAllProjects] = useState(false)
   const [loading, setLoading] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -69,13 +73,30 @@ export function HistoryPicker() {
   const loadSessions = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await window.clod.listSessions(effectiveProjectPath)
-      setSessions(result)
+      const scratchPath = defaultDirOverride || staticInfo?.defaultDir || staticInfo?.homePath || null
+      const paths = allProjects
+        ? Array.from(new Set(
+            [scratchPath, staticInfo?.homePath ?? null, effectiveProjectPath, ...projects.map((p) => p.path)]
+              .filter((p): p is string => !!p)
+          ))
+        : [effectiveProjectPath]
+      const results = await Promise.all(paths.map(async (p) => {
+        const list = await window.clod.listSessions(p).catch(() => [] as SessionMeta[])
+        return list.map((s) => ({ ...s, projectPath: p }))
+      }))
+      const merged = results.flat().sort(
+        (a, b) => new Date(b.lastTimestamp).getTime() - new Date(a.lastTimestamp).getTime()
+      )
+      setSessions(merged)
     } catch {
       setSessions([])
     }
     setLoading(false)
-  }, [effectiveProjectPath])
+  }, [effectiveProjectPath, allProjects, projects, defaultDirOverride, staticInfo])
+
+  useEffect(() => {
+    if (open) void loadSessions()
+  }, [allProjects])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!open) return
@@ -97,19 +118,19 @@ export function HistoryPicker() {
     setOpen((o) => !o)
   }
 
-  const handleSelect = (session: SessionMeta) => {
+  const handleSelect = (session: TaggedSession) => {
     setOpen(false)
     const title = session.firstMessage
       ? (session.firstMessage.length > 30 ? session.firstMessage.substring(0, 27) + '...' : session.firstMessage)
       : session.slug || 'Resumed'
-    void resumeSession(session.sessionId, title, effectiveProjectPath)
+    void resumeSession(session.sessionId, title, session.projectPath)
   }
 
-  const handleDelete = async (e: React.MouseEvent, session: SessionMeta) => {
+  const handleDelete = async (e: React.MouseEvent, session: TaggedSession) => {
     e.stopPropagation()
     // Optimistically remove; restore on failure.
     setSessions((prev) => prev.filter((s) => s.sessionId !== session.sessionId))
-    const ok = await window.clod.deleteSession(session.sessionId, effectiveProjectPath).catch(() => false)
+    const ok = await window.clod.deleteSession(session.sessionId, session.projectPath).catch(() => false)
     if (!ok) void loadSessions()
   }
 
@@ -152,8 +173,20 @@ export function HistoryPicker() {
             flexDirection: 'column' as const,
           }}
         >
-          <div className="px-3 py-2 text-[11px] font-medium flex-shrink-0" style={{ color: colors.textTertiary, borderBottom: `1px solid ${colors.popoverBorder}` }}>
-            Recent Sessions
+          <div className="px-3 py-2 text-[11px] font-medium flex-shrink-0 flex items-center justify-between" style={{ color: colors.textTertiary, borderBottom: `1px solid ${colors.popoverBorder}` }}>
+            <span>Recent Sessions</span>
+            <button
+              onClick={() => setAllProjects((v) => !v)}
+              className="rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors"
+              style={{
+                background: allProjects ? colors.accent : colors.surfaceSecondary,
+                color: allProjects ? colors.textOnAccent : colors.textSecondary,
+                border: `1px solid ${allProjects ? colors.accent : colors.containerBorder}`,
+              }}
+              title={allProjects ? 'Showing sessions from all projects' : 'Showing this workspace only'}
+            >
+              All
+            </button>
           </div>
 
           <div className="overflow-y-auto py-1" style={{ maxHeight: pos.maxHeight != null ? undefined : 180 }}>
@@ -187,6 +220,12 @@ export function HistoryPicker() {
                       <span>{formatTimeAgo(session.lastTimestamp)}</span>
                       <span>{formatSize(session.size)}</span>
                       {session.slug && <span className="truncate">{session.slug}</span>}
+                      {allProjects && (
+                        <span className="truncate" style={{ color: colors.textTertiary }}>
+                          {projects.find((p) => p.path === session.projectPath)?.name
+                            ?? session.projectPath.split('/').pop()}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </button>
