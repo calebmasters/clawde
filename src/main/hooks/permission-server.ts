@@ -466,6 +466,24 @@ export class PermissionServer extends EventEmitter {
     return true
   }
 
+  /** Deny a pending question outright (e.g. its tab closed) without an answers payload. */
+  denyQuestion(questionId: string, reason: string): boolean {
+    const pending = this.pendingRequests.get(questionId)
+    if (!pending) {
+      log(`denyQuestion: no pending request for ${questionId}`)
+      return false
+    }
+    if (pending.kind !== 'question') {
+      log(`denyQuestion: ${questionId} is not a question request — refusing`)
+      return false
+    }
+    clearTimeout(pending.timeout)
+    this.pendingRequests.delete(questionId)
+    log(`Question denied [${questionId}]: ${reason}`)
+    pending.resolve({ decision: 'deny', reason })
+    return true
+  }
+
   // ─── Dynamic Options ───
 
   /**

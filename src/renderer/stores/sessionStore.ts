@@ -158,6 +158,7 @@ interface State {
   addSystemMessage: (content: string) => void
   sendMessage: (prompt: string, projectPath?: string) => void
   respondPermission: (tabId: string, questionId: string, optionId: string) => void
+  respondQuestion: (tabId: string, questionId: string, answers: Record<string, string | string[]>) => void
   addDirectory: (dir: string) => void
   removeDirectory: (dir: string) => void
   setBaseDirectory: (dir: string) => void
@@ -636,7 +637,7 @@ export const useSessionStore = create<State>((set, get) => ({
     set((s) => ({
       tabs: s.tabs.map((t) =>
         t.id === activeTabId
-          ? { ...t, messages: [], lastResult: null, currentActivity: '', permissionQueue: [], permissionDenied: null, queuedPrompts: [] }
+          ? { ...t, messages: [], lastResult: null, currentActivity: '', permissionQueue: [], permissionDenied: null, questionQueue: [], queuedPrompts: [] }
           : t
       ),
     }))
@@ -730,6 +731,30 @@ export const useSessionStore = create<State>((set, get) => ({
           currentActivity: remaining.length > 0
             ? `Waiting for permission: ${remaining[0].toolTitle}`
             : 'Working...',
+        }
+      }),
+    }))
+  },
+
+  respondQuestion: (tabId, questionId, answers) => {
+    window.clod.respondQuestion(tabId, questionId, answers).catch(() => {})
+
+    // Show the chosen answer(s) in the timeline like a user reply
+    const summary = Object.values(answers)
+      .map((a) => (Array.isArray(a) ? a.join(', ') : a))
+      .join(' · ')
+
+    set((s) => ({
+      tabs: s.tabs.map((t) => {
+        if (t.id !== tabId) return t
+        const remaining = t.questionQueue.filter((q) => q.questionId !== questionId)
+        return {
+          ...t,
+          questionQueue: remaining,
+          currentActivity: remaining.length > 0 ? 'Waiting for your answer...' : 'Working...',
+          messages: summary
+            ? [...t.messages, { id: nextMsgId(), role: 'user' as const, content: summary, timestamp: Date.now() }]
+            : t.messages,
         }
       }),
     }))
@@ -1068,6 +1093,7 @@ export const useSessionStore = create<State>((set, get) => ({
             updated.activeRequestId = null
             updated.currentActivity = ''
             updated.permissionQueue = []
+            updated.questionQueue = []
             updated.lastResult = {
               totalCostUsd: event.costUsd,
               durationMs: event.durationMs,
@@ -1116,6 +1142,7 @@ export const useSessionStore = create<State>((set, get) => ({
             updated.activeRequestId = null
             updated.currentActivity = ''
             updated.permissionQueue = []
+            updated.questionQueue = []
             updated.permissionDenied = null
             updated.messages = [
               ...updated.messages,
@@ -1128,6 +1155,7 @@ export const useSessionStore = create<State>((set, get) => ({
             updated.activeRequestId = null
             updated.currentActivity = ''
             updated.permissionQueue = []
+            updated.questionQueue = []
             updated.permissionDenied = null
             updated.messages = [
               ...updated.messages,
@@ -1156,6 +1184,14 @@ export const useSessionStore = create<State>((set, get) => ({
             updated.currentActivity = `Waiting for permission: ${event.toolName}`
             break
           }
+
+          case 'question_request':
+            updated.questionQueue = [
+              ...updated.questionQueue,
+              { questionId: event.questionId, questions: event.questions },
+            ]
+            updated.currentActivity = 'Waiting for your answer...'
+            break
 
           case 'rate_limit':
             if (event.status !== 'allowed') {
@@ -1187,7 +1223,7 @@ export const useSessionStore = create<State>((set, get) => ({
               ...t,
               status: newStatus as TabStatus,
               // Clear activity when transitioning to idle (e.g., after warmup init)
-              ...(newStatus === 'idle' ? { currentActivity: '', permissionQueue: [] as import('../../shared/types').PermissionRequest[], permissionDenied: null } : {}),
+              ...(newStatus === 'idle' ? { currentActivity: '', permissionQueue: [] as import('../../shared/types').PermissionRequest[], questionQueue: [] as import('../../shared/types').QuestionRequest[], permissionDenied: null } : {}),
             }
           : t
       ),
@@ -1209,6 +1245,7 @@ export const useSessionStore = create<State>((set, get) => ({
           activeRequestId: null,
           currentActivity: '',
           permissionQueue: [],
+          questionQueue: [],
           messages: alreadyHasError
             ? t.messages
             : [

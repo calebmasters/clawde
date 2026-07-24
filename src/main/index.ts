@@ -697,6 +697,11 @@ ipcMain.handle(IPC.RESPOND_PERMISSION, (_event, { tabId, questionId, optionId }:
   return controlPlane.respondToPermission(tabId, questionId, optionId)
 })
 
+ipcMain.handle(IPC.RESPOND_QUESTION, (_event, { tabId, questionId, answers }: { tabId: string; questionId: string; answers: Record<string, string | string[]> }) => {
+  log(`IPC RESPOND_QUESTION: tab=${tabId} question=${questionId}`)
+  return controlPlane.respondQuestion(tabId, questionId, answers)
+})
+
 ipcMain.handle(IPC.LIST_SESSIONS, async (_e, projectPath?: string) => {
   log(`IPC LIST_SESSIONS ${projectPath ? `(path=${projectPath})` : ''}`)
   try {

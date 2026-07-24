@@ -11,6 +11,7 @@ import type {
   NormalizedEvent,
   RunOptions,
   EnrichedError,
+  QuestionItem,
 } from '../../shared/types'
 
 const MAX_QUEUE_DEPTH = 32
@@ -127,6 +128,19 @@ export class ControlPlane extends EventEmitter {
         options,
       }
       this.emit('event', tabId, permEvent)
+    })
+
+    // AskUserQuestion → inline question card. Unlike permissions, questions
+    // are never auto-approved: even in 'auto' mode the user must answer.
+    this.permissionServer.on('question-request', (questionId: string, questions: QuestionItem[], _toolRequest: HookToolRequest, tabId: string) => {
+      if (!this.tabs.has(tabId)) {
+        log(`Question request for closed tab ${tabId.substring(0, 8)}… — auto-denying`)
+        this.permissionServer.denyQuestion(questionId, 'Tab closed')
+        return
+      }
+      log(`Question request [${questionId}]: ${questions.length} question(s) tab=${tabId.substring(0, 8)}…`)
+      const event: NormalizedEvent = { type: 'question_request', questionId, questions }
+      this.emit('event', tabId, event)
     })
 
     log(`Interactive PTY transport: ${interactivePty ? 'ENABLED' : 'disabled'}`)
@@ -704,6 +718,16 @@ export class ControlPlane extends EventEmitter {
   }
 
   // ─── Permission Response ───
+
+  /** Route an inline question answer to the permission server. */
+  respondQuestion(tabId: string, questionId: string, answers: Record<string, string | string[]>): boolean {
+    const tab = this.tabs.get(tabId)
+    if (!tab) {
+      log(`respondQuestion: unknown tab ${tabId}`)
+      return false
+    }
+    return this.permissionServer.respondToQuestion(questionId, answers)
+  }
 
   respondToPermission(tabId: string, questionId: string, optionId: string): boolean {
     // Route to hook server if this is a hook-based permission request.
