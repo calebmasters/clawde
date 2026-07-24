@@ -28,6 +28,8 @@ interface Props {
   onSelect: (cmd: SlashCommand) => void
   anchorRect: DOMRect | null
   extraCommands?: SlashCommand[]
+  /** When provided, render exactly these (filtered) instead of the built-in command list */
+  items?: SlashCommand[]
 }
 
 export function getFilteredCommands(filter: string): SlashCommand[] {
@@ -45,10 +47,15 @@ export function getFilteredCommandsWithExtras(filter: string, extraCommands: Sla
   return merged.filter((c) => c.command.startsWith(q))
 }
 
-export function SlashCommandMenu({ filter, selectedIndex, onSelect, anchorRect, extraCommands = [] }: Props) {
+export function filterItems(filter: string, items: SlashCommand[]): SlashCommand[] {
+  const q = filter.toLowerCase()
+  return items.filter((c) => c.command.toLowerCase().startsWith(q))
+}
+
+export function SlashCommandMenu({ filter, selectedIndex, onSelect, anchorRect, extraCommands = [], items }: Props) {
   const listRef = useRef<HTMLDivElement>(null)
   const popoverLayer = usePopoverLayer()
-  const filtered = getFilteredCommandsWithExtras(filter, extraCommands)
+  const filtered = items ? filterItems(filter, items) : getFilteredCommandsWithExtras(filter, extraCommands)
   const colors = useColors()
 
   useEffect(() => {

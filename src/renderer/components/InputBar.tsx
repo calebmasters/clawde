@@ -3,8 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowUp, Camera, Paperclip } from '@phosphor-icons/react'
 import { useSessionStore, AVAILABLE_MODELS } from '../stores/sessionStore'
 import { AttachmentChips } from './AttachmentChips'
-import { SlashCommandMenu, getFilteredCommandsWithExtras, type SlashCommand } from './SlashCommandMenu'
+import { SlashCommandMenu, getFilteredCommandsWithExtras, filterItems, type SlashCommand } from './SlashCommandMenu'
 import { useColors, useThemeStore, DEFAULT_PLACEHOLDER } from '../theme'
+import type { InstalledSkill } from '../../shared/types'
 
 const INPUT_MIN_HEIGHT = 20
 const INPUT_MAX_HEIGHT = 140
@@ -20,6 +21,8 @@ export function InputBar() {
   const [input, setInput] = useState('')
   const [slashFilter, setSlashFilter] = useState<string | null>(null)
   const [slashIndex, setSlashIndex] = useState(0)
+  const [skillsMode, setSkillsMode] = useState(false)
+  const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([])
   const [isMultiLine, setIsMultiLine] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -54,11 +57,26 @@ export function InputBar() {
   const canSend = !!tab && !isConnecting && hasContent
   const attachments = tab?.attachments || []
   const showSlashMenu = slashFilter !== null && !isConnecting
-  const skillCommands: SlashCommand[] = (tab?.sessionSkills || []).map((skill) => ({
-    command: `/${skill}`,
-    description: `Run skill: ${skill}`,
-    icon: <span className="text-[11px]">✦</span>,
-  }))
+  const skillCommands: SlashCommand[] = React.useMemo(() => {
+    const byName = new Map<string, SlashCommand>()
+    for (const s of installedSkills) {
+      byName.set(s.name, {
+        command: `/${s.name}`,
+        description: s.description || `Run skill: ${s.name}`,
+        icon: <span className="text-[11px]">✦</span>,
+      })
+    }
+    for (const skill of tab?.sessionSkills || []) {
+      if (!byName.has(skill)) {
+        byName.set(skill, {
+          command: `/${skill}`,
+          description: `Run skill: ${skill}`,
+          icon: <span className="text-[11px]">✦</span>,
+        })
+      }
+    }
+    return [...byName.values()]
+  }, [installedSkills, tab?.sessionSkills])
 
   useEffect(() => {
     textareaRef.current?.focus()
@@ -70,6 +88,11 @@ export function InputBar() {
       textareaRef.current?.focus()
     })
     return unsub
+  }, [])
+
+  // Fetch installed skills once on mount for the /skills picker
+  useEffect(() => {
+    window.clod.listSkills().then(setInstalledSkills).catch(() => {})
   }, [])
 
   const measureInlineHeight = useCallback((value: string): number => {
@@ -156,8 +179,15 @@ export function InputBar() {
       setSlashIndex(0)
     } else {
       setSlashFilter(null)
+      setSkillsMode(false)
     }
   }, [])
+
+  // Single source of truth for what the menu currently shows (keyboard nav, Enter, rendering)
+  const getMenuItems = useCallback((): SlashCommand[] => {
+    if (skillsMode) return filterItems(slashFilter ?? '/', skillCommands)
+    return getFilteredCommandsWithExtras(slashFilter ?? '', skillCommands)
+  }, [skillsMode, slashFilter, skillCommands])
 
   // ─── Handle slash commands ───
   const executeCommand = useCallback((cmd: SlashCommand) => {
@@ -206,14 +236,19 @@ export function InputBar() {
         break
       }
       case '/skills': {
-        if (tab?.sessionSkills && tab.sessionSkills.length > 0) {
-          const lines = tab.sessionSkills.map((s) => `/${s}`)
-          addSystemMessage(`Available skills (${tab.sessionSkills.length}):\n${lines.join('\n')}`)
-        } else if (tab?.claudeSessionId) {
-          addSystemMessage('No skills available in this session.')
-        } else {
-          addSystemMessage('No session metadata yet — send a message first.')
+        // Open the skills picker: the menu switches to installed skills,
+        // filter continues from what the user types after '/'
+        if (skillCommands.length === 0) {
+          setInput('')
+          setSlashFilter(null)
+          addSystemMessage('No skills found — install skills from the marketplace, or send a message first to load session skills.')
+          break
         }
+        setSkillsMode(true)
+        setInput('/')
+        setSlashFilter('/')
+        setSlashIndex(0)
+        requestAnimationFrame(() => textareaRef.current?.focus())
         break
       }
       case '/help': {
@@ -229,27 +264,35 @@ export function InputBar() {
         break
       }
     }
-  }, [tab, clearTab, addSystemMessage, staticInfo, preferredModel])
+  }, [tab, clearTab, addSystemMessage, staticInfo, preferredModel, skillCommands])
 
   const handleSlashSelect = useCallback((cmd: SlashCommand) => {
-    const isSkillCommand = !!tab?.sessionSkills?.includes(cmd.command.replace(/^\//, ''))
+    const isSkillCommand = skillCommands.some((c) => c.command === cmd.command)
     if (isSkillCommand) {
       setInput(`${cmd.command} `)
       setSlashFilter(null)
+      setSkillsMode(false)
       requestAnimationFrame(() => textareaRef.current?.focus())
       return
     }
     setInput('')
     setSlashFilter(null)
     executeCommand(cmd)
-  }, [executeCommand, tab?.sessionSkills])
+  }, [executeCommand, skillCommands])
 
   // ─── Send ───
   const handleSend = useCallback(() => {
     if (showSlashMenu) {
-      const filtered = getFilteredCommandsWithExtras(slashFilter!, skillCommands)
+      const filtered = getMenuItems()
       if (filtered.length > 0) {
-        handleSlashSelect(filtered[slashIndex])
+        handleSlashSelect(filtered[slashIndex] ?? filtered[0])
+        return
+      }
+      if (skillsMode) {
+        // Nothing to pick — close the picker instead of sending the raw '/'
+        setSkillsMode(false)
+        setInput('')
+        setSlashFilter(null)
         return
       }
     }
@@ -282,16 +325,16 @@ export function InputBar() {
     sendMessage(prompt || 'See attached files')
     // Refocus after React re-renders from the state update
     requestAnimationFrame(() => textareaRef.current?.focus())
-  }, [input, isBusy, sendMessage, attachments.length, showSlashMenu, slashFilter, slashIndex, handleSlashSelect])
+  }, [input, isBusy, sendMessage, attachments.length, showSlashMenu, slashFilter, slashIndex, handleSlashSelect, getMenuItems, skillsMode])
 
   // ─── Keyboard ───
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (showSlashMenu) {
-      const filtered = getFilteredCommandsWithExtras(slashFilter!, skillCommands)
-      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex((i) => (i + 1) % filtered.length); return }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex((i) => (i - 1 + filtered.length) % filtered.length); return }
+      const filtered = getMenuItems()
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (filtered.length > 0) setSlashIndex((i) => (i + 1) % filtered.length); return }
+      if (e.key === 'ArrowUp') { e.preventDefault(); if (filtered.length > 0) setSlashIndex((i) => (i - 1 + filtered.length) % filtered.length); return }
       if (e.key === 'Tab') { e.preventDefault(); if (filtered.length > 0) handleSlashSelect(filtered[slashIndex]); return }
-      if (e.key === 'Escape') { e.preventDefault(); setSlashFilter(null); return }
+      if (e.key === 'Escape') { e.preventDefault(); setSlashFilter(null); setSkillsMode(false); return }
     }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
     if (e.key === 'Escape' && !showSlashMenu) { window.clod.hideWindow() }
@@ -337,6 +380,7 @@ export function InputBar() {
             onSelect={handleSlashSelect}
             anchorRect={wrapperRef.current?.getBoundingClientRect() ?? null}
             extraCommands={skillCommands}
+            items={skillsMode ? skillCommands : undefined}
           />
         )}
       </AnimatePresence>
