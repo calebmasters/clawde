@@ -32,7 +32,7 @@ function parseQuestion(v: unknown): QuestionItem | null {
   }
   return {
     question: q.question,
-    header: typeof q.header === 'string' ? q.header : undefined,
+    header: typeof q.header === 'string' && q.header.length <= MAX_TEXT ? q.header : undefined,
     options,
     multiSelect: q.multiSelect === true,
   }

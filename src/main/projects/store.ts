@@ -9,7 +9,9 @@ import type { Project, ProjectDefaults } from '../../shared/types'
 const MAX_NAME_LENGTH = 64
 
 function isValidName(v: unknown): v is string {
-  return typeof v === 'string' && v.trim().length > 0 && v.length <= MAX_NAME_LENGTH
+  if (typeof v !== 'string') return false
+  const trimmed = v.trim()
+  return trimmed.length > 0 && trimmed.length <= MAX_NAME_LENGTH
 }
 
 function isValidPath(v: unknown): v is string {

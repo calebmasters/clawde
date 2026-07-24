@@ -737,13 +737,12 @@ export const useSessionStore = create<State>((set, get) => ({
   },
 
   respondQuestion: (tabId, questionId, answers) => {
-    window.clod.respondQuestion(tabId, questionId, answers).catch(() => {})
-
-    // Show the chosen answer(s) in the timeline like a user reply
     const summary = Object.values(answers)
       .map((a) => (Array.isArray(a) ? a.join(', ') : a))
       .join(' · ')
 
+    // Remove the card immediately; append the timeline entry only once main
+    // confirms whether the answer actually reached the pending question.
     set((s) => ({
       tabs: s.tabs.map((t) => {
         if (t.id !== tabId) return t
@@ -752,12 +751,25 @@ export const useSessionStore = create<State>((set, get) => ({
           ...t,
           questionQueue: remaining,
           currentActivity: remaining.length > 0 ? 'Waiting for your answer...' : 'Working...',
-          messages: summary
-            ? [...t.messages, { id: nextMsgId(), role: 'user' as const, content: summary, timestamp: Date.now() }]
-            : t.messages,
         }
       }),
     }))
+
+    window.clod.respondQuestion(tabId, questionId, answers)
+      .then((delivered) => {
+        set((s) => ({
+          tabs: s.tabs.map((t) => {
+            if (t.id !== tabId) return t
+            const message = delivered
+              ? (summary
+                  ? { id: nextMsgId(), role: 'user' as const, content: summary, timestamp: Date.now() }
+                  : null)
+              : { id: nextMsgId(), role: 'system' as const, content: 'Question expired — your answer was not delivered.', timestamp: Date.now() }
+            return message ? { ...t, messages: [...t.messages, message] } : t
+          }),
+        }))
+      })
+      .catch(() => {})
   },
 
   // ─── Directory management ───

@@ -65,4 +65,11 @@ describe('ProjectsStore', () => {
     writeFileSync(file, 'garbage{{{')
     expect(new ProjectsStore(file).list()).toEqual([])
   })
+
+  it('accepts a name whose trimmed length is within the 64-char bound', () => {
+    const store = new ProjectsStore(file)
+    const p = store.create({ name: 'x'.repeat(64) + '   ', path: '/ok' })
+    expect(p).not.toBeNull()
+    expect(p!.name).toBe('x'.repeat(64))
+  })
 })

@@ -52,4 +52,9 @@ describe('parseQuestions', () => {
     const manyOpts = { question: 'Q?', options: Array.from({ length: 13 }, (_, i) => ({ label: `o${i}` })) }
     expect(parseQuestions({ questions: [manyOpts] })).toBeNull()
   })
+
+  it('drops an oversized header but keeps the question', () => {
+    const result = parseQuestions({ questions: [{ question: 'Q?', header: 'h'.repeat(5000), options: [{ label: 'a' }] }] })
+    expect(result).toEqual([{ question: 'Q?', header: undefined, options: [{ label: 'a' }], multiSelect: false }])
+  })
 })

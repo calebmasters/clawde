@@ -1545,6 +1545,9 @@ app.whenReady().then(async () => {
       activatePreset(presetId, `double-tap ${mod}`)
       return
     }
+    // Once presets exist they own all keybinds — the legacy single-hotkey
+    // fallthrough only serves pre-migration launches.
+    if (getPresetsStore().list().length > 0) return
     if (mod === 'option' && hotkeyMode === 'double-option') toggleWindow('double-tap Option')
     if (mod === 'command' && hotkeyMode === 'double-command') toggleWindow('double-tap Command')
   })
