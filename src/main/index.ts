@@ -5,6 +5,7 @@ import { createInterface } from 'readline'
 import { homedir } from 'os'
 import { ControlPlane } from './claude/control-plane'
 import { ensureSkills, type SkillStatus } from './skills/installer'
+import { listInstalledSkills } from './skills/list'
 import { fetchCatalog, listInstalled, installPlugin, uninstallPlugin } from './marketplace/catalog'
 import { log as _log, LOG_FILE, flushLogs } from './logger'
 import { getCliEnv } from './cli-env'
@@ -1415,6 +1416,8 @@ ipcMain.handle(IPC.OPEN_IN_TERMINAL, async (_event, arg: string | null | { sessi
 
 // ─── Marketplace IPC ───
 
+let skillsListCache: { at: number; items: ReturnType<typeof listInstalledSkills> } | null = null
+
 ipcMain.handle(IPC.MARKETPLACE_FETCH, async (_event, { forceRefresh } = {}) => {
   log('IPC MARKETPLACE_FETCH')
   return fetchCatalog(forceRefresh)
@@ -1426,13 +1429,26 @@ ipcMain.handle(IPC.MARKETPLACE_INSTALLED, async () => {
 })
 
 ipcMain.handle(IPC.MARKETPLACE_INSTALL, async (_event, { repo, pluginName, marketplace, sourcePath, isSkillMd }: { repo: string; pluginName: string; marketplace: string; sourcePath?: string; isSkillMd?: boolean }) => {
+  skillsListCache = null
   log(`IPC MARKETPLACE_INSTALL: ${pluginName} from ${repo} (isSkillMd=${isSkillMd})`)
   return installPlugin(repo, pluginName, marketplace, sourcePath, isSkillMd)
 })
 
 ipcMain.handle(IPC.MARKETPLACE_UNINSTALL, async (_event, { pluginName }: { pluginName: string }) => {
+  skillsListCache = null
   log(`IPC MARKETPLACE_UNINSTALL: ${pluginName}`)
   return uninstallPlugin(pluginName)
+})
+
+// ─── Installed skills (for the / picker) ───
+
+ipcMain.handle(IPC.SKILLS_LIST, () => {
+  if (skillsListCache && Date.now() - skillsListCache.at < 30_000) {
+    return skillsListCache.items
+  }
+  const items = listInstalledSkills()
+  skillsListCache = { at: Date.now(), items }
+  return items
 })
 
 // ─── Theme Detection ───

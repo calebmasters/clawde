@@ -358,6 +358,14 @@ export interface QuestionRequest {
   questions: QuestionItem[]
 }
 
+// ─── Installed Skills ───
+
+/** A skill installed under ~/.claude/skills (for the / picker). */
+export interface InstalledSkill {
+  name: string
+  description: string
+}
+
 // ─── Marketplace / Plugin Types ───
 
 export type PluginStatus = 'not_installed' | 'checking' | 'installing' | 'installed' | 'failed'
@@ -400,6 +408,7 @@ export const IPC = {
   GET_DIAGNOSTICS: 'clod:get-diagnostics',
   RESPOND_PERMISSION: 'clod:respond-permission',
   RESPOND_QUESTION: 'clod:respond-question',
+  SKILLS_LIST: 'clod:skills-list',
   INIT_SESSION: 'clod:init-session',
   RESET_TAB_SESSION: 'clod:reset-tab-session',
   ANIMATE_HEIGHT: 'clod:animate-height',

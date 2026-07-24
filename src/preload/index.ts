@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/types'
-import type { RunOptions, NormalizedEvent, HealthReport, EnrichedError, Attachment, SessionMeta, CatalogPlugin, SessionLoadMessage, Project, ProjectDefaults, Preset, PresetInput } from '../shared/types'
+import type { RunOptions, NormalizedEvent, HealthReport, EnrichedError, Attachment, SessionMeta, CatalogPlugin, SessionLoadMessage, Project, ProjectDefaults, Preset, PresetInput, InstalledSkill } from '../shared/types'
 
 export interface ClodAPI {
   // ─── Request-response (renderer → main) ───
@@ -42,6 +42,7 @@ export interface ClodAPI {
   listInstalledPlugins(): Promise<string[]>
   installPlugin(repo: string, pluginName: string, marketplace: string, sourcePath?: string, isSkillMd?: boolean): Promise<{ ok: boolean; error?: string }>
   uninstallPlugin(pluginName: string): Promise<{ ok: boolean; error?: string }>
+  listSkills(): Promise<InstalledSkill[]>
   setPermissionMode(mode: string): void
   setHotkey(mode: 'double-option' | 'double-command' | 'accelerator', accelerator: string): void
   setTerminal(id: string): void
@@ -124,6 +125,7 @@ const api: ClodAPI = {
     ipcRenderer.invoke(IPC.MARKETPLACE_INSTALL, { repo, pluginName, marketplace, sourcePath, isSkillMd }),
   uninstallPlugin: (pluginName) =>
     ipcRenderer.invoke(IPC.MARKETPLACE_UNINSTALL, { pluginName }),
+  listSkills: () => ipcRenderer.invoke(IPC.SKILLS_LIST),
   setPermissionMode: (mode) => ipcRenderer.send(IPC.SET_PERMISSION_MODE, mode),
   setHotkey: (mode, accelerator) => ipcRenderer.send(IPC.SET_HOTKEY, mode, accelerator),
   setTerminal: (id) => ipcRenderer.send(IPC.SET_TERMINAL, id),
