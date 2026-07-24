@@ -202,6 +202,7 @@ function makeLocalTab(): TabState {
     currentActivity: '',
     permissionQueue: [],
     permissionDenied: null,
+    questionQueue: [],
     attachments: [],
     messages: [],
     title: 'New Tab',

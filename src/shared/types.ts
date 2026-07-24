@@ -151,6 +151,8 @@ export interface TabState {
   permissionQueue: PermissionRequest[]
   /** Fallback card when tools were denied and no interactive permission is available */
   permissionDenied: { tools: Array<{ toolName: string; toolUseId: string }> } | null
+  /** Pending AskUserQuestion requests awaiting an inline answer */
+  questionQueue: QuestionRequest[]
   attachments: Attachment[]
   messages: Message[]
   title: string
@@ -207,6 +209,7 @@ export type NormalizedEvent =
   | { type: 'rate_limit'; status: string; resetsAt: number; rateLimitType: string }
   | { type: 'usage'; usage: UsageData }
   | { type: 'permission_request'; questionId: string; toolName: string; toolDescription?: string; toolInput?: Record<string, unknown>; options: Array<{ id: string; label: string; kind?: string }> }
+  | { type: 'question_request'; questionId: string; questions: QuestionItem[] }
 
 // ─── Run Options ───
 
@@ -335,6 +338,26 @@ export interface Preset {
 
 export type PresetInput = Omit<Preset, 'id'>
 
+// ─── Inline questions (AskUserQuestion) ───
+
+export interface QuestionOption {
+  label: string
+  description?: string
+}
+
+export interface QuestionItem {
+  question: string
+  /** Short chip label (≤12 chars by convention) */
+  header?: string
+  options: QuestionOption[]
+  multiSelect: boolean
+}
+
+export interface QuestionRequest {
+  questionId: string
+  questions: QuestionItem[]
+}
+
 // ─── Marketplace / Plugin Types ───
 
 export type PluginStatus = 'not_installed' | 'checking' | 'installing' | 'installed' | 'failed'
@@ -376,6 +399,7 @@ export const IPC = {
   PASTE_IMAGE: 'clod:paste-image',
   GET_DIAGNOSTICS: 'clod:get-diagnostics',
   RESPOND_PERMISSION: 'clod:respond-permission',
+  RESPOND_QUESTION: 'clod:respond-question',
   INIT_SESSION: 'clod:init-session',
   RESET_TAB_SESSION: 'clod:reset-tab-session',
   ANIMATE_HEIGHT: 'clod:animate-height',

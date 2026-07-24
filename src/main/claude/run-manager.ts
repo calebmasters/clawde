@@ -178,6 +178,11 @@ export class RunManager extends EventEmitter {
       // for dangerous tools (Bash, Edit, Write, MultiEdit).
       // Auto-approve safe tools so they don't trigger the permission card.
       args.push('--settings', options.hookSettingsPath)
+      // AskUserQuestion only exists in the CLI's headless toolset when spawned
+      // with a permission-prompt-tool of 'stdio'. Only enable it when the hook
+      // server is present — the safety handler below denies whatever the hook
+      // doesn't resolve, so nothing can hang waiting for stdin without it.
+      args.push('--permission-prompt-tool', 'stdio')
       const safeAllowed = [
         ...SAFE_TOOLS,
         ...(options.allowedTools || []),
@@ -236,6 +241,27 @@ export class RunManager extends EventEmitter {
     const parser = StreamParser.fromStream(child.stdout!)
 
     parser.on('event', (raw: ClaudeEvent) => {
+      // With --permission-prompt-tool stdio, unhandled permission checks arrive
+      // as control_requests and would hang the run. The PreToolUse hook answers
+      // everything we support — deny whatever falls through, mirroring the
+      // CLI's own headless auto-deny.
+      if ((raw as { type?: string }).type === 'control_request') {
+        const req = raw as unknown as { request_id?: string; request?: { subtype?: string; tool_name?: string } }
+        log(`control_request [${requestId}]: subtype=${req.request?.subtype} tool=${req.request?.tool_name} — denying (fail-closed)`)
+        if (req.request_id && child.stdin && !child.stdin.destroyed) {
+          const denial = {
+            type: 'control_response',
+            response: {
+              subtype: 'success',
+              request_id: req.request_id,
+              response: { behavior: 'deny', message: 'Denied by Clod policy (headless)' },
+            },
+          }
+          try { child.stdin.write(JSON.stringify(denial) + '\n') } catch {}
+        }
+        return
+      }
+
       // Track session ID
       if (raw.type === 'system' && 'subtype' in raw && raw.subtype === 'init') {
         handle.sessionId = (raw as any).session_id

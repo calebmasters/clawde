@@ -25,6 +25,8 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { log as _log } from '../logger'
+import { parseQuestions } from './questions'
+import type { QuestionItem } from '../../shared/types'
 const PERMISSION_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 const DEFAULT_PORT = 19836
 const MAX_BODY_SIZE = 1024 * 1024 // 1MB
@@ -137,7 +139,7 @@ function isSafeBashCommand(command: unknown): boolean {
 }
 
 // Regex matcher for the hook config — intercept dangerous tools + external MCP tools.
-const HOOK_MATCHER = `^(${PERMISSION_REQUIRED_TOOLS.join('|')}|mcp__.*)$`
+const HOOK_MATCHER = `^(${[...PERMISSION_REQUIRED_TOOLS, 'AskUserQuestion'].join('|')}|mcp__.*)$`
 
 // Fields in tool_input that should be redacted in logs
 const SENSITIVE_FIELD_RE = /token|password|secret|key|auth|credential|api.?key/i
@@ -146,6 +148,26 @@ const SENSITIVE_FIELD_RE = /token|password|secret|key|auth|credential|api.?key/i
 // Any decision not in this set is denied (fail-closed).
 const VALID_ALLOW_DECISIONS = new Set(['allow', 'allow-session', 'allow-domain'])
 const VALID_DECISIONS = new Set([...VALID_ALLOW_DECISIONS, 'deny'])
+
+const MAX_ANSWER_LENGTH = 4000
+
+function isValidAnswers(v: unknown): v is Record<string, string | string[]> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false
+  const entries = Object.entries(v as Record<string, unknown>)
+  if (entries.length === 0 || entries.length > 8) return false
+  for (const [key, value] of entries) {
+    if (key.length === 0 || key.length > MAX_ANSWER_LENGTH) return false
+    if (typeof value === 'string') {
+      if (value.length > MAX_ANSWER_LENGTH) return false
+    } else if (Array.isArray(value)) {
+      if (value.length === 0 || value.length > 12) return false
+      if (!value.every((s) => typeof s === 'string' && s.length > 0 && s.length <= MAX_ANSWER_LENGTH)) return false
+    } else {
+      return false
+    }
+  }
+  return true
+}
 
 function log(msg: string): void {
   _log('PermissionServer', msg)
@@ -172,14 +194,17 @@ function denyResponse(reason: string) {
   }
 }
 
-/** Build an allow hook response */
-function allowResponse(reason: string) {
+/** Build an allow hook response, optionally carrying updated tool input */
+function allowResponse(reason: string, updatedInput?: Record<string, unknown>) {
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'allow',
       permissionDecisionReason: reason,
+      ...(updatedInput ? { updatedInput } : {}),
     },
+    // Defensive mirror — accepted field name varies across CLI doc versions.
+    ...(updatedInput ? { updatedToolInput: updatedInput } : {}),
   }
 }
 
@@ -197,6 +222,8 @@ export interface HookToolRequest {
 export interface PermissionDecision {
   decision: 'allow' | 'deny'
   reason?: string
+  /** For AskUserQuestion: modified tool_input carrying the user's answers */
+  updatedInput?: Record<string, unknown>
 }
 
 export interface PermissionOption {
@@ -211,6 +238,8 @@ interface PendingRequest {
   timeout: ReturnType<typeof setTimeout>
   questionId: string
   runToken: string
+  kind: 'permission' | 'question'
+  questions?: QuestionItem[]
 }
 
 interface RunRegistration {
@@ -224,6 +253,7 @@ interface RunRegistration {
  *
  * Events:
  *  - 'permission-request' (questionId, toolRequest, tabId, options) — forward to renderer
+ *  - 'question-request' (questionId, questions, toolRequest, tabId) — AskUserQuestion awaiting inline answer
  */
 export class PermissionServer extends EventEmitter {
   private server: ReturnType<typeof createServer> | null = null
@@ -354,6 +384,10 @@ export class PermissionServer extends EventEmitter {
       log(`respondToPermission: no pending request for ${questionId}`)
       return false
     }
+    if (pending.kind !== 'permission') {
+      log(`respondToPermission: ${questionId} is not a permission request — refusing`)
+      return false
+    }
 
     clearTimeout(pending.timeout)
     this.pendingRequests.delete(questionId)
@@ -389,6 +423,46 @@ export class PermissionServer extends EventEmitter {
       log(`Permission: ${toolName} → ${hookDecision}`)
     }
     pending.resolve({ decision: hookDecision, reason })
+    return true
+  }
+
+  /**
+   * Answer a pending AskUserQuestion. `answers` maps question text →
+   * selected label (or labels for multiSelect). Validated fail-closed.
+   */
+  respondToQuestion(questionId: string, answers: Record<string, string | string[]>): boolean {
+    const pending = this.pendingRequests.get(questionId)
+    if (!pending) {
+      log(`respondToQuestion: no pending request for ${questionId}`)
+      return false
+    }
+    if (pending.kind !== 'question') {
+      log(`respondToQuestion: ${questionId} is not a question request — refusing`)
+      return false
+    }
+    clearTimeout(pending.timeout)
+    this.pendingRequests.delete(questionId)
+
+    if (!isValidAnswers(answers)) {
+      log(`respondToQuestion [${questionId}]: invalid answers payload — denying (fail-closed)`)
+      pending.resolve({ decision: 'deny', reason: 'Invalid answer payload' })
+      return true
+    }
+
+    const askedQuestions = new Set((pending.questions ?? []).map((q) => q.question))
+    const unknownKey = Object.keys(answers).find((k) => !askedQuestions.has(k))
+    if (unknownKey) {
+      log(`respondToQuestion [${questionId}]: answer key not among asked questions — denying (fail-closed)`)
+      pending.resolve({ decision: 'deny', reason: 'Answer did not match the question asked' })
+      return true
+    }
+
+    log(`Question answered [${questionId}]: ${Object.keys(answers).length} answer(s)`)
+    pending.resolve({
+      decision: 'allow',
+      reason: 'Answered by user',
+      updatedInput: { ...pending.toolRequest.tool_input, answers },
+    })
     return true
   }
 
@@ -538,6 +612,45 @@ export class PermissionServer extends EventEmitter {
       log(`Hook: ${toolRequest.tool_name} → tab=${registration.tabId.substring(0, 8)}…`)
     }
 
+    // AskUserQuestion: not a permission — always surface to the user,
+    // regardless of permission mode or scoped allows.
+    if (toolRequest.tool_name === 'AskUserQuestion') {
+      const questions: QuestionItem[] | null = parseQuestions(toolRequest.tool_input)
+      if (!questions) {
+        log('AskUserQuestion with malformed tool_input — denying (fail-closed)')
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(denyResponse('Malformed question payload')))
+        return
+      }
+
+      const questionId = `question-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+      const decision = await new Promise<PermissionDecision>((resolve) => {
+        const timeout = setTimeout(() => {
+          log(`Question timeout [${questionId}] — auto-denying`)
+          this.pendingRequests.delete(questionId)
+          resolve({ decision: 'deny', reason: 'Question timed out after 5 minutes' })
+        }, PERMISSION_TIMEOUT_MS)
+
+        this.pendingRequests.set(questionId, {
+          toolRequest,
+          resolve,
+          timeout,
+          questionId,
+          runToken: urlToken,
+          kind: 'question',
+          questions,
+        })
+        this.emit('question-request', questionId, questions, toolRequest, registration.tabId)
+      })
+
+      const response = decision.decision === 'allow'
+        ? allowResponse(decision.reason || 'Answered by user', decision.updatedInput)
+        : denyResponse(decision.reason || 'Question not answered')
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(response))
+      return
+    }
+
     // Check scoped allows
     const sessionId = toolRequest.session_id
     const toolName = toolRequest.tool_name
@@ -585,6 +698,7 @@ export class PermissionServer extends EventEmitter {
         timeout,
         questionId,
         runToken: urlToken,
+        kind: 'permission',
       })
 
       // Get tool-specific options for the permission card
