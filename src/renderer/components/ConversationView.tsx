@@ -13,6 +13,7 @@ import {
 import { useSessionStore } from '../stores/sessionStore'
 import { PermissionCard } from './PermissionCard'
 import { PermissionDeniedCard } from './PermissionDeniedCard'
+import { QuestionCard } from './QuestionCard'
 import { useColors, useThemeStore } from '../theme'
 import type { Message } from '../../shared/types'
 
@@ -96,8 +97,9 @@ export function ConversationView() {
   const msgCount = tab?.messages.length ?? 0
   const lastMsg = tab?.messages[tab.messages.length - 1]
   const permissionQueueLen = tab?.permissionQueue?.length ?? 0
+  const questionQueueLen = tab?.questionQueue?.length ?? 0
   const queuedCount = tab?.queuedPrompts?.length ?? 0
-  const scrollTrigger = `${msgCount}:${lastMsg?.content?.length ?? 0}:${permissionQueueLen}:${queuedCount}`
+  const scrollTrigger = `${msgCount}:${lastMsg?.content?.length ?? 0}:${permissionQueueLen}:${questionQueueLen}:${queuedCount}`
 
   useEffect(() => {
     if (isNearBottomRef.current && scrollRef.current) {
@@ -197,6 +199,17 @@ export function ConversationView() {
               tabId={tab.id}
               permission={tab.permissionQueue[0]}
               queueLength={tab.permissionQueue.length}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Question card (shows first item from queue) */}
+        <AnimatePresence>
+          {tab.questionQueue.length > 0 && (
+            <QuestionCard
+              key={tab.questionQueue[0].questionId}
+              tabId={tab.id}
+              request={tab.questionQueue[0]}
             />
           )}
         </AnimatePresence>
