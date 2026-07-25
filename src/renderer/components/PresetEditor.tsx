@@ -156,17 +156,20 @@ function EditorPanel({ initial, onSave, onCancel }: {
           Cancel
         </button>
         <button
-          onClick={() => onSave({
-            name: name.trim(),
-            keybind,
-            projectId,
-            model,
-            permissionMode,
-            startExpanded,
+          onClick={() => {
             // An empty textarea means "leave unchanged", never a deliberately blank prompt.
-            systemPrompt: isCustomPrompt && !systemPrompt.trim() ? undefined : systemPrompt,
-            systemPromptMode: isCustomPrompt ? systemPromptMode : undefined,
-          })}
+            const finalPrompt = isCustomPrompt && !systemPrompt.trim() ? undefined : systemPrompt
+            onSave({
+              name: name.trim(),
+              keybind,
+              projectId,
+              model,
+              permissionMode,
+              startExpanded,
+              systemPrompt: finalPrompt,
+              systemPromptMode: typeof finalPrompt === 'string' ? systemPromptMode : undefined,
+            })
+          }}
           disabled={!name.trim()}
           className="rounded-md px-2 py-1 text-[11px] font-medium disabled:opacity-40"
           style={{ background: colors.accent, color: colors.textOnAccent }}
