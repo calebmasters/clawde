@@ -3,6 +3,7 @@ import { Lightning, PencilSimple, Plus, Trash, Warning } from '@phosphor-icons/r
 import { useSessionStore, AVAILABLE_MODELS } from '../stores/sessionStore'
 import { useColors } from '../theme'
 import { toAccelerator } from '../lib/accelerator'
+import { GENERAL_ASSISTANT_PROMPT, MAX_SYSTEM_PROMPT_LENGTH } from '../../shared/prompts'
 import type { Preset, PresetInput, PresetKeybind } from '../../shared/types'
 
 export function formatKeybind(kb: PresetKeybind): string {
@@ -47,6 +48,9 @@ function EditorPanel({ initial, onSave, onCancel }: {
   const [model, setModel] = useState<string | undefined>(initial.model)
   const [permissionMode, setPermissionMode] = useState<'ask' | 'auto' | undefined>(initial.permissionMode)
   const [startExpanded, setStartExpanded] = useState<boolean | undefined>(initial.startExpanded)
+  const [systemPrompt, setSystemPrompt] = useState<string | null | undefined>(initial.systemPrompt)
+  const [systemPromptMode, setSystemPromptMode] = useState<'append' | 'replace'>(initial.systemPromptMode ?? 'append')
+  const isCustomPrompt = typeof systemPrompt === 'string'
   const [recording, setRecording] = useState(false)
 
   useEffect(() => {
@@ -115,12 +119,54 @@ function EditorPanel({ initial, onSave, onCancel }: {
         <Pill colors={colors} label="Compact" active={startExpanded === false} onClick={() => setStartExpanded(false)} />
       </div>
 
+      <div className={label} style={{ color: colors.textTertiary }}>System prompt</div>
+      <div className="grid grid-cols-3 gap-1">
+        <Pill colors={colors} label="—" active={systemPrompt === undefined} onClick={() => setSystemPrompt(undefined)} />
+        <Pill colors={colors} label="Default" active={systemPrompt === null} onClick={() => setSystemPrompt(null)} />
+        <Pill colors={colors} label="Custom" active={isCustomPrompt} onClick={() => setSystemPrompt(isCustomPrompt ? systemPrompt : '')} />
+      </div>
+
+      {isCustomPrompt && (
+        <>
+          <div className="grid grid-cols-2 gap-1">
+            <Pill colors={colors} label="Append" active={systemPromptMode === 'append'} onClick={() => setSystemPromptMode('append')} />
+            <Pill colors={colors} label="Replace" active={systemPromptMode === 'replace'} onClick={() => setSystemPromptMode('replace')} />
+          </div>
+          <textarea
+            value={systemPrompt}
+            onChange={(e) => setSystemPrompt(e.target.value.slice(0, MAX_SYSTEM_PROMPT_LENGTH))}
+            placeholder="Custom system prompt for this mode"
+            rows={5}
+            className="w-full rounded-md px-2 py-1 text-[11px] resize-none"
+            style={{ background: colors.surfaceSecondary, color: colors.textPrimary, border: `1px solid ${colors.containerBorder}`, outline: 'none' }}
+          />
+          <button
+            type="button"
+            onClick={() => setSystemPrompt(GENERAL_ASSISTANT_PROMPT)}
+            className="self-start rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+            style={{ color: colors.accent }}
+          >
+            Use general-assistant template
+          </button>
+        </>
+      )}
+
       <div className="flex gap-1 justify-end mt-0.5">
         <button onClick={onCancel} className="rounded-md px-2 py-1 text-[11px]" style={{ color: colors.textTertiary }}>
           Cancel
         </button>
         <button
-          onClick={() => onSave({ name: name.trim(), keybind, projectId, model, permissionMode, startExpanded })}
+          onClick={() => onSave({
+            name: name.trim(),
+            keybind,
+            projectId,
+            model,
+            permissionMode,
+            startExpanded,
+            // An empty textarea means "leave unchanged", never a deliberately blank prompt.
+            systemPrompt: isCustomPrompt && !systemPrompt.trim() ? undefined : systemPrompt,
+            systemPromptMode: isCustomPrompt ? systemPromptMode : undefined,
+          })}
           disabled={!name.trim()}
           className="rounded-md px-2 py-1 text-[11px] font-medium disabled:opacity-40"
           style={{ background: colors.accent, color: colors.textOnAccent }}
@@ -183,7 +229,7 @@ export function PresetsSection() {
           editing === p.id ? (
             <EditorPanel
               key={p.id}
-              initial={{ name: p.name, keybind: p.keybind, projectId: p.projectId, model: p.model, permissionMode: p.permissionMode, startExpanded: p.startExpanded }}
+              initial={{ name: p.name, keybind: p.keybind, projectId: p.projectId, model: p.model, permissionMode: p.permissionMode, startExpanded: p.startExpanded, systemPrompt: p.systemPrompt, systemPromptMode: p.systemPromptMode }}
               onSave={handleSave}
               onCancel={() => setEditing(null)}
             />
