@@ -6,6 +6,7 @@
 import { randomUUID } from 'crypto'
 import { JsonFileStore } from '../storage/json-store'
 import type { Preset, PresetInput, PresetKeybind } from '../../shared/types'
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../shared/prompts'
 
 const MAX_NAME_LENGTH = 64
 
@@ -24,12 +25,20 @@ function isValidKeybind(v: unknown): v is PresetKeybind {
   return false
 }
 
+/** undefined = leave as-is, null = reset to CLI default, string = custom (length-bounded). */
+function isValidSystemPrompt(v: unknown): boolean {
+  if (v === undefined || v === null) return true
+  return typeof v === 'string' && v.length <= MAX_SYSTEM_PROMPT_LENGTH
+}
+
 function isValidInput(v: PresetInput): boolean {
   if (!isValidName(v.name) || !isValidKeybind(v.keybind)) return false
   if (v.projectId !== undefined && v.projectId !== null && typeof v.projectId !== 'string') return false
   if (v.model !== undefined && typeof v.model !== 'string') return false
   if (v.permissionMode !== undefined && v.permissionMode !== 'ask' && v.permissionMode !== 'auto') return false
   if (v.startExpanded !== undefined && typeof v.startExpanded !== 'boolean') return false
+  if (!isValidSystemPrompt(v.systemPrompt)) return false
+  if (v.systemPromptMode !== undefined && v.systemPromptMode !== 'append' && v.systemPromptMode !== 'replace') return false
   return true
 }
 

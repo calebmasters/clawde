@@ -236,6 +236,8 @@ export interface RunOptions {
   maxTurns?: number
   maxBudgetUsd?: number
   systemPrompt?: string
+  /** 'replace' passes --system-prompt; 'append' (default) passes --append-system-prompt. */
+  systemPromptMode?: 'append' | 'replace'
   model?: string
   /** Path to CLOD-scoped settings file with hook config (passed via --settings) */
   hookSettingsPath?: string
@@ -334,6 +336,14 @@ export interface Preset {
   model?: string
   permissionMode?: 'ask' | 'auto'
   startExpanded?: boolean
+  /**
+   * Custom system prompt for this mode.
+   * undefined = leave the current prompt as-is; null = reset to the CLI default;
+   * string = use this prompt. The tri-state mirrors `projectId` above.
+   */
+  systemPrompt?: string | null
+  /** How a custom prompt combines with the CLI default. Defaults to 'append'. */
+  systemPromptMode?: 'append' | 'replace'
 }
 
 export type PresetInput = Omit<Preset, 'id'>

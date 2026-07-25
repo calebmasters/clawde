@@ -53,6 +53,43 @@ describe('PresetsStore', () => {
     expect(store.list()).toEqual([])
   })
 
+  it('accepts systemPrompt undefined (leave as-is), null (reset), and a custom string', () => {
+    const store = new PresetsStore(file)
+    expect(store.create({ name: 'A', keybind: { kind: 'none' } })).not.toBeNull()
+    expect(store.create({ name: 'B', keybind: { kind: 'none' }, systemPrompt: null })).not.toBeNull()
+    const custom = store.create({
+      name: 'C',
+      keybind: { kind: 'none' },
+      systemPrompt: 'Answer anything.',
+      systemPromptMode: 'replace',
+    })
+    expect(custom).not.toBeNull()
+    const reloaded = new PresetsStore(file).list()
+    expect(reloaded).toHaveLength(3)
+    expect(reloaded[1].systemPrompt).toBeNull()
+    expect(reloaded[2]).toMatchObject({ systemPrompt: 'Answer anything.', systemPromptMode: 'replace' })
+  })
+
+  it('rejects an over-length prompt, a non-string prompt, and an invalid prompt mode', () => {
+    const store = new PresetsStore(file)
+    expect(store.create({ name: 'A', keybind: { kind: 'none' }, systemPrompt: 'x'.repeat(8001) })).toBeNull()
+    // @ts-expect-error runtime validation of a non-string prompt
+    expect(store.create({ name: 'A', keybind: { kind: 'none' }, systemPrompt: 42 })).toBeNull()
+    // @ts-expect-error runtime validation of a bad prompt mode
+    expect(store.create({ name: 'A', keybind: { kind: 'none' }, systemPromptMode: 'merge' })).toBeNull()
+    expect(store.create({ name: 'A', keybind: { kind: 'none' }, systemPrompt: 'x'.repeat(8000) })).not.toBeNull()
+    expect(store.list()).toHaveLength(1)
+  })
+
+  it('round-trips prompt fields through update', () => {
+    const store = new PresetsStore(file)
+    const p = store.create({ name: 'A', keybind: { kind: 'none' }, systemPrompt: 'first' })!
+    const updated = store.update(p.id, { systemPrompt: 'second', systemPromptMode: 'append' })
+    expect(updated).toMatchObject({ systemPrompt: 'second', systemPromptMode: 'append' })
+    expect(store.update(p.id, { systemPrompt: 'x'.repeat(8001) })).toBeNull()
+    expect(store.list()[0].systemPrompt).toBe('second')
+  })
+
   it('updates fields and clears optionals set to undefined explicitly via patch', () => {
     const store = new PresetsStore(file)
     const p = store.create({ name: 'A', keybind: { kind: 'none' }, model: 'claude-sonnet-5' })!
