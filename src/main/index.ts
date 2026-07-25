@@ -290,7 +290,18 @@ function createWindow(): void {
   })
 
   let forceQuit = false
-  app.on('before-quit', () => { forceQuit = true })
+  app.on('before-quit', () => {
+    forceQuit = true
+    // The window is created with `closable: false` so the hidden titled frame
+    // stops leaking traffic-light buttons through the Accessibility API (see
+    // applyOverlayAxIdentity). But an unclosable window also makes close() a
+    // no-op, and app.quit() closes every window before it emits 'will-quit' —
+    // so without this the tray's Quit stalls forever and the cleanup in
+    // 'will-quit' never runs. Re-enable it here: 'before-quit' is the last
+    // point at which the quit can still be cancelled, so the AX identity holds
+    // for the entire life of the window except its final teardown.
+    mainWindow?.setClosable(true)
+  })
   mainWindow.on('close', (e) => {
     if (!forceQuit) {
       e.preventDefault()
