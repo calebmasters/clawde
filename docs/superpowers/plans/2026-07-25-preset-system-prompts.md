@@ -28,7 +28,7 @@
 | File | Status | Responsibility |
 |------|--------|----------------|
 | `src/shared/types.ts` | Modify | `Preset.systemPrompt`, `Preset.systemPromptMode`, `RunOptions.systemPromptMode` |
-| `src/shared/prompts.ts` | Create | `GENERAL_ASSISTANT_PROMPT` template text, shared by main and renderer |
+| `src/shared/prompts.ts` | Create | `GENERAL_ASSISTANT_PROMPT` template text and `MAX_SYSTEM_PROMPT_LENGTH`, shared by main and renderer |
 | `src/main/presets/store.ts` | Modify | Validate the two new preset fields |
 | `src/main/presets/store.test.ts` | Modify | Cover the new validation cases |
 | `src/main/claude/system-prompt.ts` | Create | `CLOD_UI_HINT`, `CLOD_ENGINEER_HINT`, `buildSystemPromptArgs()` |
@@ -56,7 +56,7 @@ Build order is 1 → 2 → 3 → 4. Task 2 depends on the types from Task 1; Tas
 - Produces:
   - `Preset.systemPrompt?: string | null` and `Preset.systemPromptMode?: 'append' | 'replace'` — `PresetInput` inherits both via `Omit<Preset, 'id'>`
   - `RunOptions.systemPromptMode?: 'append' | 'replace'` (alongside the existing `RunOptions.systemPrompt?: string`)
-  - `GENERAL_ASSISTANT_PROMPT: string` exported from `src/shared/prompts.ts`
+  - `GENERAL_ASSISTANT_PROMPT: string` and `MAX_SYSTEM_PROMPT_LENGTH: number` exported from `src/shared/prompts.ts`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -140,6 +140,13 @@ Directly below the existing `systemPrompt?: string` line (line 238):
  */
 
 /**
+ * Upper bound on a preset's custom system prompt. Enforced by the presets store
+ * and by the editor's textarea, so the editor can never produce a value the
+ * store will reject.
+ */
+export const MAX_SYSTEM_PROMPT_LENGTH = 8000
+
+/**
  * Starting template for a general-purpose "quick question" mode.
  * Inserted into the preset editor by an explicit button — never applied silently.
  */
@@ -162,10 +169,10 @@ export const GENERAL_ASSISTANT_PROMPT = [
 
 - [ ] **Step 6: Add validation to `src/main/presets/store.ts`**
 
-Below the existing `const MAX_NAME_LENGTH = 64` (line 10):
+Add to the import block at the top of the file:
 
 ```typescript
-const MAX_SYSTEM_PROMPT_LENGTH = 8000
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../shared/prompts'
 ```
 
 Below `isValidKeybind` (after line 25):
@@ -620,7 +627,7 @@ There is no jsdom environment in this repo, so this task is verified by type-che
 At the top of `PresetEditor.tsx`, after the existing `toAccelerator` import:
 
 ```typescript
-import { GENERAL_ASSISTANT_PROMPT } from '../../shared/prompts'
+import { GENERAL_ASSISTANT_PROMPT, MAX_SYSTEM_PROMPT_LENGTH } from '../../shared/prompts'
 ```
 
 In `EditorPanel`, below the `startExpanded` state (line 49):
@@ -651,7 +658,7 @@ Insert after the "Chat on activate" block (after line 116) and before the `<div 
           </div>
           <textarea
             value={systemPrompt}
-            onChange={(e) => setSystemPrompt(e.target.value.slice(0, 8000))}
+            onChange={(e) => setSystemPrompt(e.target.value.slice(0, MAX_SYSTEM_PROMPT_LENGTH))}
             placeholder="Custom system prompt for this mode"
             rows={5}
             className="w-full rounded-md px-2 py-1 text-[11px] resize-none"
@@ -669,7 +676,7 @@ Insert after the "Chat on activate" block (after line 116) and before the `<div 
       )}
 ```
 
-The `.slice(0, 8000)` keeps input inside the store's validation bound, so a save can never be silently rejected for length.
+The `.slice(0, MAX_SYSTEM_PROMPT_LENGTH)` keeps input inside the store's validation bound, so a save can never be silently rejected for length. Both layers import the same constant from `src/shared/prompts.ts`.
 
 - [ ] **Step 3: Include the fields when saving**
 
