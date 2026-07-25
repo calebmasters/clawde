@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { TabStatus, NormalizedEvent, EnrichedError, Message, TabState, Attachment, InlineImage, CatalogPlugin, PluginStatus, Project, ProjectDefaults, Preset, PresetInput, PresetKeybind } from '../../shared/types'
 import { useThemeStore } from '../theme'
+import { resolvePromptState } from '../lib/preset-prompt'
 import notificationSrc from '../../../resources/notification.mp3'
 
 // ─── Known models ───
@@ -48,6 +49,8 @@ interface SessionPrefs {
   permissionMode: 'ask' | 'auto'
   defaultDirOverride: string | null
   activeProjectId: string | null
+  systemPrompt: string | null
+  systemPromptMode: 'append' | 'replace'
 }
 
 const DEFAULT_PREFS: SessionPrefs = {
@@ -55,6 +58,8 @@ const DEFAULT_PREFS: SessionPrefs = {
   permissionMode: 'ask',
   defaultDirOverride: null,
   activeProjectId: null,
+  systemPrompt: null,
+  systemPromptMode: 'append',
 }
 
 function loadPrefs(): SessionPrefs {
@@ -68,6 +73,8 @@ function loadPrefs(): SessionPrefs {
         permissionMode: p.permissionMode === 'auto' ? 'auto' : 'ask',
         defaultDirOverride: typeof p.defaultDirOverride === 'string' ? p.defaultDirOverride : null,
         activeProjectId: typeof p.activeProjectId === 'string' ? p.activeProjectId : null,
+        systemPrompt: typeof p.systemPrompt === 'string' ? p.systemPrompt : null,
+        systemPromptMode: p.systemPromptMode === 'replace' ? 'replace' : 'append',
       }
     }
   } catch {}
@@ -103,6 +110,10 @@ interface State {
   preferredModel: string | null
   /** Global permission mode: 'ask' shows cards, 'auto' auto-approves all tool calls. Persisted. */
   permissionMode: 'ask' | 'auto'
+  /** Custom system prompt from the active mode (null = Claude Code default). Persisted. */
+  systemPrompt: string | null
+  /** How the custom prompt combines with the CLI default. Persisted. */
+  systemPromptMode: 'append' | 'replace'
   /** User-chosen default working directory for new chats (null = use main's scratch dir). Persisted. */
   defaultDirOverride: string | null
   /** Known projects (workspaces), loaded from main on startup. */
@@ -223,12 +234,16 @@ function makeLocalTab(): TabState {
 
 const initialTab = makeLocalTab()
 
-function prefsSnapshot(s: Pick<State, 'preferredModel' | 'permissionMode' | 'defaultDirOverride' | 'activeProjectId'>): SessionPrefs {
+function prefsSnapshot(
+  s: Pick<State, 'preferredModel' | 'permissionMode' | 'defaultDirOverride' | 'activeProjectId' | 'systemPrompt' | 'systemPromptMode'>,
+): SessionPrefs {
   return {
     preferredModel: s.preferredModel,
     permissionMode: s.permissionMode,
     defaultDirOverride: s.defaultDirOverride,
     activeProjectId: s.activeProjectId,
+    systemPrompt: s.systemPrompt,
+    systemPromptMode: s.systemPromptMode,
   }
 }
 
@@ -239,6 +254,8 @@ export const useSessionStore = create<State>((set, get) => ({
   staticInfo: null,
   preferredModel: initialPrefs.preferredModel,
   permissionMode: initialPrefs.permissionMode,
+  systemPrompt: initialPrefs.systemPrompt,
+  systemPromptMode: initialPrefs.systemPromptMode,
   defaultDirOverride: initialPrefs.defaultDirOverride,
   projects: [],
   activeProjectId: initialPrefs.activeProjectId,
@@ -397,6 +414,10 @@ export const useSessionStore = create<State>((set, get) => ({
     if (preset.model) get().setPreferredModel(preset.model)
     if (preset.permissionMode) get().setPermissionMode(preset.permissionMode)
     if (preset.startExpanded !== undefined) set({ isExpanded: preset.startExpanded })
+    const { systemPrompt, systemPromptMode } = get()
+    const resolved = resolvePromptState({ systemPrompt, systemPromptMode }, preset)
+    set(resolved)
+    savePrefs(prefsSnapshot(get()))
     if (notifyMain) {
       try { window.clod.setActivePreset(presetId) } catch {}
     }
@@ -939,12 +960,14 @@ export const useSessionStore = create<State>((set, get) => ({
     }))
 
     // Send to backend — ControlPlane will queue if a run is active
-    const { preferredModel } = get()
+    const { preferredModel, systemPrompt, systemPromptMode } = get()
     window.clod.prompt(activeTabId, requestId, {
       prompt: fullPrompt,
       projectPath: resolvedPath,
       sessionId: tab.claudeSessionId || undefined,
       model: preferredModel || undefined,
+      systemPrompt: systemPrompt || undefined,
+      systemPromptMode: systemPrompt ? systemPromptMode : undefined,
       addDirs: tab.additionalDirs.length > 0 ? tab.additionalDirs : undefined,
       images: inlineImages.length > 0 ? inlineImages : undefined,
     }).catch((err: Error) => {
