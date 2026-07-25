@@ -4,6 +4,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { StreamParser } from '../stream-parser'
 import { normalize } from './event-normalizer'
+import { buildSystemPromptArgs } from './system-prompt'
 import { buildUserContent } from './message-content'
 import { log as _log } from '../logger'
 import { getCliEnv } from '../cli-env'
@@ -12,30 +13,6 @@ import type { ClaudeEvent, NormalizedEvent, RunOptions, EnrichedError } from '..
 
 const MAX_RING_LINES = 100
 const DEBUG = process.env.CLOD_DEBUG === '1'
-
-// Appended to Claude's default system prompt so it knows it's running inside CLOD.
-// Uses --append-system-prompt (additive) not --system-prompt (replacement).
-const CLOD_SYSTEM_HINT = [
-  'IMPORTANT: You are NOT running in a terminal. You are running inside CLOD,',
-  'a desktop chat application with a rich UI that renders full markdown.',
-  'CLOD is a GUI wrapper around Claude Code — the user sees your output in a',
-  'styled conversation view, not a raw terminal.',
-  '',
-  'Because CLOD renders markdown natively, you MUST use rich formatting when it helps:',
-  '- Always use clickable markdown links: [label](https://url) — they render as real buttons.',
-  '- When the user asks for images, and public web images are appropriate, proactively find and render them in CLOD.',
-  '- Workflow: WebSearch for relevant public pages -> WebFetch those pages -> extract real image URLs -> render with markdown ![alt](url).',
-  '- Do not guess, fabricate, or construct image URLs from memory.',
-  '- Only embed images when the URL is a real publicly accessible image URL found through tools or explicitly provided by the user.',
-  '- If real image URLs cannot be obtained confidently, fall back to clickable links and briefly say so.',
-  '- Do not ask whether CLOD can render images; assume it can.',
-  '- Use tables, bold, headers, and bullet lists freely — they all render beautifully.',
-  '- Use code blocks with language tags for syntax highlighting.',
-  '',
-  'You are still a software engineering assistant. Keep using your tools (Read, Edit, Bash, etc.)',
-  'normally. But when presenting information, links, resources, or explanations to the user,',
-  'take full advantage of the rich UI. The user expects a polished chat experience, not raw terminal text.',
-].join('\n')
 
 // Tools auto-approved via --allowedTools (never trigger the permission card).
 // Includes routine internal agent mechanics (Agent, Task, TaskOutput, TodoWrite,
@@ -203,11 +180,7 @@ export class RunManager extends EventEmitter {
     if (options.maxBudgetUsd) {
       args.push('--max-budget-usd', String(options.maxBudgetUsd))
     }
-    if (options.systemPrompt) {
-      args.push('--system-prompt', options.systemPrompt)
-    }
-    // Always tell Claude it's inside CLOD (additive, doesn't replace base prompt)
-    args.push('--append-system-prompt', CLOD_SYSTEM_HINT)
+    args.push(...buildSystemPromptArgs(options))
 
     if (DEBUG) {
       log(`Starting run ${requestId}: ${this.claudeBinary} ${args.join(' ')}`)
