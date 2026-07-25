@@ -235,6 +235,13 @@ export interface RunOptions {
   allowedTools?: string[]
   maxTurns?: number
   maxBudgetUsd?: number
+  /**
+   * Raw prompt text/mode — do not push these straight onto the CLI args yourself.
+   * `buildSystemPromptArgs()` (src/main/claude/system-prompt.ts) is the only
+   * sanctioned composer: it also adds CLOD_UI_HINT and picks the right flag.
+   * A bare `--system-prompt`/`--append-system-prompt` push bypasses that and
+   * silently turns every append-mode preset into a full replacement.
+   */
   systemPrompt?: string
   /** 'replace' passes --system-prompt; 'append' (default) passes --append-system-prompt. */
   systemPromptMode?: 'append' | 'replace'

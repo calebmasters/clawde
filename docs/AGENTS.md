@@ -45,6 +45,9 @@ Claude Code CLI (claude -p --output-format stream-json)
 | Spawning Claude CLI processes | `src/main/claude/run-manager.ts` |
 | Raw NDJSON → canonical events | `src/main/claude/event-normalizer.ts` |
 | Permission hook server | `src/main/hooks/permission-server.ts` |
+| Composes system prompt CLI args | `src/main/claude/system-prompt.ts` |
+| Shared prompt text and length bound | `src/shared/prompts.ts` |
+| Preset prompt tri-state resolution | `src/renderer/lib/preset-prompt.ts` |
 | All TypeScript types & IPC channels | `src/shared/types.ts` |
 | Zustand state store | `src/renderer/stores/sessionStore.ts` |
 | Theme / color system | `src/renderer/theme.ts` |

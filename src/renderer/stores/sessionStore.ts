@@ -49,8 +49,6 @@ interface SessionPrefs {
   permissionMode: 'ask' | 'auto'
   defaultDirOverride: string | null
   activeProjectId: string | null
-  systemPrompt: string | null
-  systemPromptMode: 'append' | 'replace'
 }
 
 const DEFAULT_PREFS: SessionPrefs = {
@@ -58,8 +56,6 @@ const DEFAULT_PREFS: SessionPrefs = {
   permissionMode: 'ask',
   defaultDirOverride: null,
   activeProjectId: null,
-  systemPrompt: null,
-  systemPromptMode: 'append',
 }
 
 function loadPrefs(): SessionPrefs {
@@ -73,8 +69,6 @@ function loadPrefs(): SessionPrefs {
         permissionMode: p.permissionMode === 'auto' ? 'auto' : 'ask',
         defaultDirOverride: typeof p.defaultDirOverride === 'string' ? p.defaultDirOverride : null,
         activeProjectId: typeof p.activeProjectId === 'string' ? p.activeProjectId : null,
-        systemPrompt: typeof p.systemPrompt === 'string' ? p.systemPrompt : null,
-        systemPromptMode: p.systemPromptMode === 'replace' ? 'replace' : 'append',
       }
     }
   } catch {}
@@ -110,9 +104,15 @@ interface State {
   preferredModel: string | null
   /** Global permission mode: 'ask' shows cards, 'auto' auto-approves all tool calls. Persisted. */
   permissionMode: 'ask' | 'auto'
-  /** Custom system prompt from the active mode (null = Claude Code default). Persisted. */
+  /**
+   * Custom system prompt from the active mode (null = Claude Code default).
+   * Session-scoped, not persisted — resets to null on relaunch, matching
+   * `activePresetId`. This is deliberate self-healing: without it, a
+   * quick-question mode's custom prompt would survive a relaunch even though
+   * the mode badge shows no active mode, with no visible way back to default.
+   */
   systemPrompt: string | null
-  /** How the custom prompt combines with the CLI default. Persisted. */
+  /** How the custom prompt combines with the CLI default. Session-scoped, not persisted. */
   systemPromptMode: 'append' | 'replace'
   /** User-chosen default working directory for new chats (null = use main's scratch dir). Persisted. */
   defaultDirOverride: string | null
@@ -235,15 +235,13 @@ function makeLocalTab(): TabState {
 const initialTab = makeLocalTab()
 
 function prefsSnapshot(
-  s: Pick<State, 'preferredModel' | 'permissionMode' | 'defaultDirOverride' | 'activeProjectId' | 'systemPrompt' | 'systemPromptMode'>,
+  s: Pick<State, 'preferredModel' | 'permissionMode' | 'defaultDirOverride' | 'activeProjectId'>,
 ): SessionPrefs {
   return {
     preferredModel: s.preferredModel,
     permissionMode: s.permissionMode,
     defaultDirOverride: s.defaultDirOverride,
     activeProjectId: s.activeProjectId,
-    systemPrompt: s.systemPrompt,
-    systemPromptMode: s.systemPromptMode,
   }
 }
 
@@ -254,8 +252,8 @@ export const useSessionStore = create<State>((set, get) => ({
   staticInfo: null,
   preferredModel: initialPrefs.preferredModel,
   permissionMode: initialPrefs.permissionMode,
-  systemPrompt: initialPrefs.systemPrompt,
-  systemPromptMode: initialPrefs.systemPromptMode,
+  systemPrompt: null,
+  systemPromptMode: 'append',
   defaultDirOverride: initialPrefs.defaultDirOverride,
   projects: [],
   activeProjectId: initialPrefs.activeProjectId,
@@ -417,7 +415,6 @@ export const useSessionStore = create<State>((set, get) => ({
     const { systemPrompt, systemPromptMode } = get()
     const resolved = resolvePromptState({ systemPrompt, systemPromptMode }, preset)
     set(resolved)
-    savePrefs(prefsSnapshot(get()))
     if (notifyMain) {
       try { window.clod.setActivePreset(presetId) } catch {}
     }
